@@ -1,0 +1,173 @@
+"""Regex + line-layout TOC parser (no LLM)."""
+
+from __future__ import annotations
+
+import re
+from typing import List, Optional, Tuple
+
+TOC_LINE = re.compile(
+    r"^(?P<indent>\s*)"
+    r"(?P<num>(?:\d+(?:\.\d+)*)|[A-Z]\.|[IVXLCM]+\.)?\s*"
+    r"(?P<title>[^\.\d\n].{0,200}?)"
+    r"(?:[\.\s]{2,}|\t+)"
+    r"(?P<page>\d{1,4})\s*$",
+    re.MULTILINE,
+)
+
+TOC_LINE_ALT = re.compile(
+    r"^(?P<indent>\s*)"
+    r"(?P<num>(?:\d+(?:\.\d+)*)|[A-Z]\.)?\s*"
+    r"(?P<title>.{2,120}?)\s+(\.{2,}|\t+)\s*(?P<page>\d{1,4})\s*$",
+    re.MULTILINE,
+)
+
+_RE_NUM_ONLY = re.compile(r"^\s*(\d+(?:\.\d+)*)\s*$")
+_RE_PAGE_ONLY = re.compile(r"^\s*(\d{1,4})\s*$")
+_RE_TOC_HEADER = re.compile(r"\bTABLE\s+OF\s+CONTENTS\b", re.IGNORECASE)
+
+_JUNK_TITLES = re.compile(
+    r"^(?:PHYSICS|CBSE\s+Grade|NCERT|Visual\s+AI\s+Teaching|Physics\s+for\s+Everyone|Grade\s+\d+)",
+    re.IGNORECASE,
+)
+
+
+def _indent_level(indent: str) -> int:
+    return len(indent.expandtabs(4))
+
+
+def _structure_level(num: str) -> int:
+    if not num:
+        return 1
+    return len(num.strip().rstrip(".").split("."))
+
+
+def _normalize_num(num: str) -> str:
+    return num.strip().rstrip(".")
+
+
+def _make_entry(num: str, title: str, page_num: int, indent: int = 0) -> dict:
+    num = _normalize_num(num)
+    return {
+        "structure": num or None,
+        "title": title.strip(),
+        "page_number": page_num,
+        "level": _structure_level(num) if num else 1,
+        "indent": indent,
+    }
+
+
+def _parse_layout_a(text: str) -> List[dict]:
+    entries: List[dict] = []
+    for pattern in (TOC_LINE, TOC_LINE_ALT):
+        for m in pattern.finditer(text):
+            title = (m.group("title") or "").strip()
+            if not title or len(title) < 2 or _JUNK_TITLES.match(title):
+                continue
+            try:
+                page_num = int(m.group("page"))
+            except (TypeError, ValueError):
+                continue
+            num = (m.group("num") or "").strip().rstrip(".")
+            entries.append(_make_entry(num, title, page_num, _indent_level(m.group("indent") or "")))
+        if entries:
+            break
+    return entries
+
+
+def _parse_layout_b_vertical_triplet(text: str) -> List[dict]:
+    """Number line / title line / page line (science_grade5.pdf layout)."""
+    lines = [ln.strip() for ln in text.splitlines()]
+    entries: List[dict] = []
+    i = 0
+    while i < len(lines) - 2:
+        m_num = _RE_NUM_ONLY.match(lines[i])
+        if not m_num:
+            i += 1
+            continue
+        num = m_num.group(1)
+        title = lines[i + 1].strip()
+        m_page = _RE_PAGE_ONLY.match(lines[i + 2])
+        if not title or len(title) < 2 or not m_page or _JUNK_TITLES.match(title):
+            i += 1
+            continue
+        try:
+            page_num = int(m_page.group(1))
+        except ValueError:
+            i += 1
+            continue
+        entries.append(_make_entry(num, title, page_num))
+        i += 3
+    return entries
+
+
+def _parse_layout_c_title_page(text: str) -> List[dict]:
+    """Section number optional on title line; page on following line."""
+    lines = [ln.strip() for ln in text.splitlines()]
+    entries: List[dict] = []
+    i = 0
+    while i < len(lines) - 1:
+        line = lines[i]
+        m_page = _RE_PAGE_ONLY.match(lines[i + 1])
+        if not m_page:
+            i += 1
+            continue
+        m_inline = re.match(
+            r"^\s*((?:\d+(?:\.\d+)*)\s+)?(.{2,120}?)\s*$",
+            line,
+        )
+        if not m_inline:
+            i += 1
+            continue
+        num = (m_inline.group(1) or "").strip()
+        title = (m_inline.group(2) or "").strip()
+        if not title or len(title) < 2 or _JUNK_TITLES.match(title):
+            i += 1
+            continue
+        try:
+            page_num = int(m_page.group(1))
+        except ValueError:
+            i += 1
+            continue
+        entries.append(_make_entry(num, title, page_num))
+        i += 2
+    return entries
+
+
+def parse_toc(text: str) -> Tuple[List[dict], float]:
+    entries: List[dict] = []
+    for parser in (_parse_layout_a, _parse_layout_b_vertical_triplet, _parse_layout_c_title_page):
+        entries = parser(text)
+        if len(entries) >= 3:
+            break
+    confidence = _toc_confidence(entries, text)
+    return entries, confidence
+
+
+def find_toc_page_index(page_texts: List[str], max_scan: int = 20) -> Optional[int]:
+    """Return 0-based index of page containing TABLE OF CONTENTS."""
+    for i, text in enumerate(page_texts[:max_scan]):
+        if text and _RE_TOC_HEADER.search(text):
+            return i
+    return None
+
+
+def _toc_confidence(entries: List[dict], text: str) -> float:
+    if len(entries) < 3:
+        return 0.0
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    density = len(entries) / max(len(lines), 1)
+    pages = [e["page_number"] for e in entries if e.get("page_number")]
+    monotonic = 0.0
+    if len(pages) >= 2:
+        inc = sum(1 for i in range(1, len(pages)) if pages[i] >= pages[i - 1])
+        monotonic = inc / (len(pages) - 1)
+    levels = [e.get("level", 1) for e in entries]
+    level_var = len(set(levels)) / max(len(levels), 1)
+    score = min(1.0, density * 8 * 0.25 + monotonic * 0.35 + min(level_var, 1.0) * 0.25)
+    lower = text.lower()
+    if _RE_TOC_HEADER.search(text[:800]) or "contents" in lower[:500]:
+        score = min(1.0, score + 0.25)
+    structures = [e.get("structure") for e in entries if e.get("structure")]
+    if len(structures) >= 3:
+        score = min(1.0, score + 0.10)
+    return score
