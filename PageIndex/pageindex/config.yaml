@@ -1,0 +1,96 @@
+# Primary SLM for all structured generation (Ollama local)
+generation_model: "ollama/qwen2.5:3b"
+
+# Model name used only for litellm.token_counter (no inference, just tokenization)
+token_count_model: "gemini/gemini-2.5-flash-lite"
+
+# Gemini fallback — used by local_llm only when GEMINI_API_KEY is set and Ollama fails
+fallback_model: "gemini/gemini-2.0-flash"
+enable_gemini_fallback: "no"
+
+# Legacy alias — maps to token_count_model; keeps --model CLI flag working
+model: "ollama/qwen2.5:3b"
+
+retrieve_model: "gemini/gemini-2.5-flash-lite"
+if_add_node_id: "yes"
+if_add_node_summary: "yes"
+if_add_doc_description: "no"
+if_add_node_text: "no"
+
+# Default execution mode (overridden by --cpu / --gpu CLI flags)
+mode: "cpu"
+
+stage_models:
+  toc_detection: "ollama/gemma4:e4b"
+  toc_index_extractor: "ollama/gemma4:e4b"
+  no_toc_outline: "ollama/gemma4:e4b"
+  tree_construction: "ollama/gemma4:e4b"
+  summary_generation: "ollama/gemma4:e4b"
+  chapter_summary: "ollama/gemma4:e4b"
+  title_cleanup: "ollama/qwen2.5:3b"
+  ocr_cleanup: "ollama/qwen2.5:3b"
+  extractive_polish: "ollama/qwen2.5:3b"
+  doc_description: "ollama/qwen2.5:3b"
+
+cpu_mode:
+  inference_timeout_seconds: 600
+  toc_batch_timeout_seconds: 120
+  toc_pages_per_batch: 1
+  toc_page_chars_limit: 5000
+  toc_num_predict: 1024
+  summary_num_predict: 512
+  summary_nodes_per_batch: 1
+  max_prompt_tokens: 3500
+  max_context_tokens: 4096
+  recursive_depth: 1
+  max_retries: 2
+  max_summary_pages: null
+  toc_check_page_num: 10
+  max_page_num_each_node: 12
+  max_token_num_each_node: 12000
+  extractive_min_confidence: 0.45
+  extractive_max_sentences: 3
+  slm_fallback_ratio_max: 0.80
+  pre_truncate_aggressive: false
+  max_node_text_chars: 8000
+  tree_max_depth: 4
+  toc_deterministic_min_confidence: 0.55
+  boundary_extend_max_pages: 2
+
+gpu_mode:
+  inference_timeout_seconds: 180
+  toc_batch_timeout_seconds: 60
+  toc_pages_per_batch: 4
+  toc_page_chars_limit: 5000
+  toc_num_predict: 1024
+  summary_num_predict: 512
+  summary_nodes_per_batch: 4
+  max_prompt_tokens: 6000
+  max_context_tokens: 4096
+  recursive_depth: 2
+  max_retries: 2
+  max_summary_pages: null
+  toc_check_page_num: 20
+  max_page_num_each_node: 10
+  max_token_num_each_node: 20000
+  extractive_min_confidence: 0.55
+  extractive_max_sentences: 3
+  slm_fallback_ratio_max: 0.80
+  pre_truncate_aggressive: false
+  max_node_text_chars: 50000
+  tree_max_depth: 8
+  toc_deterministic_min_confidence: 0.55
+  boundary_extend_max_pages: 2
+
+demo_overrides:
+  max_pages: 30
+  recursive_depth: 1
+  toc_pages_per_batch: 1
+  toc_check_page_num: 10
+  max_summary_pages: 8
+  no_summaries: false
+  toc_page_chars_limit: 5000
+  toc_num_predict: 1024
+  toc_batch_timeout_seconds: 120
+  max_prompt_tokens: 3500
+  max_context_tokens: 4096

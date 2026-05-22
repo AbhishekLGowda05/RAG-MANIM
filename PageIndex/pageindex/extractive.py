@@ -1,0 +1,75 @@
+"""Deterministic extractive summarization (no LLM)."""
+
+from __future__ import annotations
+
+import re
+from collections import Counter
+from typing import Dict, List
+
+
+def _split_sentences(text: str) -> List[str]:
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+|\n+", text.strip())
+    return [p.strip() for p in parts if len(p.strip()) > 10]
+
+
+def _top_keywords(text: str, n: int = 8) -> List[str]:
+    words = re.findall(r"[a-zA-Z]{4,}", text.lower())
+    stop = {
+        "that", "this", "with", "from", "have", "been", "were", "which",
+        "their", "there", "about", "would", "could", "should", "these",
+        "those", "into", "than", "then", "when", "what", "your", "also",
+    }
+    words = [w for w in words if w not in stop]
+    if not words:
+        return []
+    counts = Counter(words)
+    return [w for w, _ in counts.most_common(n)]
+
+
+def _textrank_scores(sentences: List[str]) -> List[tuple]:
+    if len(sentences) <= 1:
+        return [(0, s) for s in sentences]
+    word_freq: Counter = Counter()
+    sent_words: List[List[str]] = []
+    for s in sentences:
+        words = re.findall(r"[a-zA-Z]{3,}", s.lower())
+        sent_words.append(words)
+        word_freq.update(words)
+    if not word_freq:
+        return [(i, s) for i, s in enumerate(sentences)]
+    scores = []
+    for i, words in enumerate(sent_words):
+        if not words:
+            scores.append((0.0, sentences[i]))
+            continue
+        tf = sum(word_freq[w] for w in words) / len(words)
+        position = 1.0 - (i / max(len(sentences), 1))
+        scores.append((tf * 0.7 + position * 0.3, sentences[i]))
+    return sorted(scores, key=lambda x: x[0], reverse=True)
+
+
+def _score_confidence(sentences: List[str], picked: List[str], keywords: List[str]) -> float:
+    if not sentences or not picked:
+        return 0.0
+    coverage = len(" ".join(picked)) / max(len(" ".join(sentences)), 1)
+    kw_signal = min(len(keywords) / 5.0, 1.0)
+    length_signal = min(len(picked) / 3.0, 1.0)
+    return min(1.0, coverage * 0.5 + kw_signal * 0.25 + length_signal * 0.25)
+
+
+def summarize(
+    text: str,
+    max_sentences: int = 3,
+    max_keywords: int = 8,
+) -> Dict:
+    sents = _split_sentences(text)
+    if not sents:
+        return {"summary": "", "keywords": [], "confidence": 0.0}
+    scored = _textrank_scores(sents)
+    picked = [s for _, s in scored[:max_sentences]]
+    summary = " ".join(picked)
+    keywords = _top_keywords(text, n=max_keywords)
+    confidence = _score_confidence(sents, picked, keywords)
+    return {"summary": summary, "keywords": keywords, "confidence": confidence}
