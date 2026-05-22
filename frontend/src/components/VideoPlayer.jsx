@@ -75,8 +75,8 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
 
   const ticks = getSceneTicks();
 
-  // Custom visual fallback when no MP4 file loads
-  const isMockUrl = !videoUrl || videoUrl.includes('placeholder') || videoUrl.includes('output.mp4');
+  // Custom visual fallback when no video URL is provided
+  const isMockUrl = !videoUrl || videoUrl === null || videoUrl === '';
 
   return (
     <div

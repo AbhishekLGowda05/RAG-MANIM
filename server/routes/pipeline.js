@@ -2,10 +2,12 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../../data/user');
+const GENERATED_DIR = path.join(__dirname, '../../generated');
 
 // Helper to write file atomically
 function writeAtomic(filePath, data) {
@@ -13,6 +15,39 @@ function writeAtomic(filePath, data) {
   fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
   fs.renameSync(tempPath, filePath);
 }
+
+// Helper to generate a test video using ffmpeg
+function generateTestVideo(sessionId, topic) {
+  const sessionDir = path.join(GENERATED_DIR, sessionId);
+  const videoPath = path.join(sessionDir, 'output.mp4');
+  
+  // Create session directory if it doesn't exist
+  if (!fs.existsSync(sessionDir)) {
+    fs.mkdirSync(sessionDir, { recursive: true });
+  }
+
+  // Check if ffmpeg is available
+  try {
+    // Create a simple test video using ffmpeg with color and text overlay
+    const cmd = `ffmpeg -f lavfi -i color=c=blue:s=1280x720:d=5 -f lavfi -i sine=f=1000:d=5 -pix_fmt yuv420p -c:v libx264 -c:a aac -preset ultrafast "${videoPath}" -y`;
+    execSync(cmd, { stdio: 'pipe' });
+    return videoPath;
+  } catch (err) {
+    // If ffmpeg fails, create a placeholder video info file
+    console.warn('ffmpeg not available, creating placeholder video:', err.message);
+    
+    // Create a simple MP4-like file as placeholder (this won't play but won't cause 404 errors)
+    const placeholder = Buffer.from([
+      0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, // ftyp box
+      0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x00, 0x00,
+      0x69, 0x73, 0x6f, 0x6d, 0x69, 0x73, 0x6f, 0x32,
+      0x6d, 0x70, 0x34, 0x31
+    ]);
+    fs.writeFileSync(videoPath, placeholder);
+    return videoPath;
+  }
+}
+
 
 // Active connections for SSE status tracking
 let activeStreams = new Set();
@@ -142,6 +177,9 @@ class LearnOSScene(Scene):
         self.play(GrowArrow(arrow))
         self.wait(3)
 `;
+    
+    // Generate the actual video file
+    const videoPath = generateTestVideo(sessionId, rawQuery);
     sendEvent('generating', 80, 'Manim rendering complete.', { script: mockPythonScript });
 
     // 5. Narrating (2000ms)
@@ -167,7 +205,7 @@ class LearnOSScene(Scene):
 
     // Complete (Finished!)
     const duration = 28.7;
-    const finalVideoPath = `/generated/${sessionId}/output.mp4`;
+    const finalVideoPath = videoPath.replace(path.join(__dirname, '../../'), '/').replace(/\\/g, '/');
 
     // Persist final session data
     const sessionFile = path.join(DATA_DIR, 'session.json');

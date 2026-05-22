@@ -1,6 +1,15 @@
 {
   "sessions": [
     {
+      "session_id": "session-1779423450948",
+      "topic": "explain me about collision — Chapter 9",
+      "subject": "Physics",
+      "duration_seconds": 28,
+      "completed_at": "2026-05-22T04:17:53.294Z",
+      "video_path": "/generated/session-1779423450948/output.mp4",
+      "follow_up_count": 0
+    },
+    {
       "session_id": "session-1779420970800",
       "topic": "Atomic Structure — Chapter 6",
       "subject": "Chemistry",
