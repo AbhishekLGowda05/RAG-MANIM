@@ -1,31 +1,31 @@
 {
-  "session_id": "session-1779423450948",
-  "topic_query": "explain me about collision",
-  "topic_resolved": "explain me about collision — Chapter 9",
+  "session_id": "session-1779423963615",
+  "topic_query": "Newton's First Law",
+  "topic_resolved": "Newton's First Law — Chapter 9",
   "pipeline_stage": "complete",
   "messages": [
     {
       "role": "user",
-      "content": "Explain explain me about collision",
-      "timestamp": "2026-05-22T04:17:53.287Z"
+      "content": "Explain Newton's First Law",
+      "timestamp": "2026-05-22T04:26:26.045Z"
     },
     {
       "role": "assistant",
-      "content": "Here is your fully animated lesson for **explain me about collision — Chapter 9**!",
-      "timestamp": "2026-05-22T04:17:53.287Z"
+      "content": "Here is your fully animated lesson for **Newton's First Law — Chapter 9**!",
+      "timestamp": "2026-05-22T04:26:26.045Z"
     }
   ],
-  "video_url": "/generated/session-1779423450948/output.mp4",
+  "video_url": "/generated/session-1779423963615/output.mp4",
   "explanation_package": {
-    "topic": "explain me about collision — Chapter 9",
+    "topic": "Newton's First Law — Chapter 9",
     "learning_objectives": [
-      "Understand the fundamental principles of explain me about collision",
-      "Apply core formulas of explain me about collision to solve basic problems",
-      "Explore real-world analogies regarding explain me about collision"
+      "Understand the fundamental principles of Newton's First Law",
+      "Apply core formulas of Newton's First Law to solve basic problems",
+      "Explore real-world analogies regarding Newton's First Law"
     ],
-    "core_explanation": "explain me about collision represents a key physical phenomenon where system interactions establish thermodynamic, mechanical, or chemical equilibriums. To grasp this, let's look at the basic equations that define it...",
+    "core_explanation": "Newton's First Law represents a key physical phenomenon where system interactions establish thermodynamic, mechanical, or chemical equilibriums. To grasp this, let's look at the basic equations that define it...",
     "analogies": [
-      "Think of explain me about collision like a tug-of-war where both sides pull with equal strength, maintaining absolute stillness while experiencing high tension.",
+      "Think of Newton's First Law like a tug-of-war where both sides pull with equal strength, maintaining absolute stillness while experiencing high tension.",
       "It is like two escalator tracks moving at identical speeds in opposite directions, keeping a walking person perfectly in place."
     ],
     "visual_elements": [
@@ -43,7 +43,7 @@
     {
       "scene_number": 1,
       "title": "Conceptual Introduction",
-      "description": "Visualizes the base representation of explain me about collision using floating particles and scale vector axes.",
+      "description": "Visualizes the base representation of Newton's First Law using floating particles and scale vector axes.",
       "duration_seconds": 7.5
     },
     {
@@ -59,5 +59,5 @@
       "duration_seconds": 9.2
     }
   ],
-  "notes": "# Learning Notes: explain me about collision — Chapter 9\n\n- Core concept: ...\n- Analogy: Balance of opposite vectors.\n"
+  "notes": "# Learning Notes: Newton's First Law — Chapter 9\n\n- Core concept: ...\n- Analogy: Balance of opposite vectors.\n"
 }

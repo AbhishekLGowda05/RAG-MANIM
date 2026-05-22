@@ -1,6 +1,15 @@
 {
   "sessions": [
     {
+      "session_id": "session-1779423963615",
+      "topic": "Newton's First Law — Chapter 9",
+      "subject": "Physics",
+      "duration_seconds": 28,
+      "completed_at": "2026-05-22T04:26:26.050Z",
+      "video_path": "/generated/session-1779423963615/output.mp4",
+      "follow_up_count": 0
+    },
+    {
       "session_id": "session-1779423450948",
       "topic": "explain me about collision — Chapter 9",
       "subject": "Physics",

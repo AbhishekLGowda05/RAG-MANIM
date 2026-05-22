@@ -1,10 +1,11 @@
 {
-  "total_sessions": 3,
-  "total_watch_time_seconds": 84,
+  "total_sessions": 4,
+  "total_watch_time_seconds": 112,
   "topics_covered": [
     "explain me about friction — Chapter 1",
     "Atomic Structure — Chapter 6",
-    "explain me about collision — Chapter 9"
+    "explain me about collision — Chapter 9",
+    "Newton's First Law — Chapter 9"
   ],
   "weak_topic_flags": [],
   "daily_activity": [
@@ -15,12 +16,12 @@
     },
     {
       "date": "2026-05-22",
-      "minutes": 2,
-      "sessions": 2
+      "minutes": 3,
+      "sessions": 3
     }
   ],
   "subject_distribution": {
-    "Physics": 2,
+    "Physics": 3,
     "Chemistry": 1
   }
 }
