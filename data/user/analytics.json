@@ -1,0 +1,25 @@
+{
+  "total_sessions": 2,
+  "total_watch_time_seconds": 56,
+  "topics_covered": [
+    "explain me about friction — Chapter 1",
+    "Atomic Structure — Chapter 6"
+  ],
+  "weak_topic_flags": [],
+  "daily_activity": [
+    {
+      "date": "2026-05-21",
+      "minutes": 1,
+      "sessions": 1
+    },
+    {
+      "date": "2026-05-22",
+      "minutes": 1,
+      "sessions": 1
+    }
+  ],
+  "subject_distribution": {
+    "Physics": 1,
+    "Chemistry": 1
+  }
+}

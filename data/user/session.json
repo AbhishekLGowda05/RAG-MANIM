@@ -1,0 +1,63 @@
+{
+  "session_id": "session-1779420970800",
+  "topic_query": "Atomic Structure",
+  "topic_resolved": "Atomic Structure — Chapter 6",
+  "pipeline_stage": "complete",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Explain Atomic Structure",
+      "timestamp": "2026-05-22T03:36:33.148Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Here is your fully animated lesson for **Atomic Structure — Chapter 6**!",
+      "timestamp": "2026-05-22T03:36:33.148Z"
+    }
+  ],
+  "video_url": "/generated/session-1779420970800/output.mp4",
+  "explanation_package": {
+    "topic": "Atomic Structure — Chapter 6",
+    "learning_objectives": [
+      "Understand the fundamental principles of Atomic Structure",
+      "Apply core formulas of Atomic Structure to solve basic problems",
+      "Explore real-world analogies regarding Atomic Structure"
+    ],
+    "core_explanation": "Atomic Structure represents a key physical phenomenon where system interactions establish thermodynamic, mechanical, or chemical equilibriums. To grasp this, let's look at the basic equations that define it...",
+    "analogies": [
+      "Think of Atomic Structure like a tug-of-war where both sides pull with equal strength, maintaining absolute stillness while experiencing high tension.",
+      "It is like two escalator tracks moving at identical speeds in opposite directions, keeping a walking person perfectly in place."
+    ],
+    "visual_elements": [
+      "Vector lines representing balance",
+      "Highlighted mathematical equalities",
+      "Glow animations for peak stress points"
+    ],
+    "difficulty": "Medium",
+    "prerequisites": [
+      "Introduction to basic algebra",
+      "Fundamental mechanics"
+    ]
+  },
+  "scene_plan": [
+    {
+      "scene_number": 1,
+      "title": "Conceptual Introduction",
+      "description": "Visualizes the base representation of Atomic Structure using floating particles and scale vector axes.",
+      "duration_seconds": 7.5
+    },
+    {
+      "scene_number": 2,
+      "title": "Mathematical Breakdown",
+      "description": "Derives key state equations step-by-step using highlighted equations zooming into focus.",
+      "duration_seconds": 12
+    },
+    {
+      "scene_number": 3,
+      "title": "Analogy Demonstration",
+      "description": "Visualizes a dynamic model of a balance scale adjusting in real-time, showing visual equilibrium.",
+      "duration_seconds": 9.2
+    }
+  ],
+  "notes": "# Learning Notes: Atomic Structure — Chapter 6\n\n- Core concept: ...\n- Analogy: Balance of opposite vectors.\n"
+}

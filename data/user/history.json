@@ -1,0 +1,22 @@
+{
+  "sessions": [
+    {
+      "session_id": "session-1779420970800",
+      "topic": "Atomic Structure — Chapter 6",
+      "subject": "Chemistry",
+      "duration_seconds": 28,
+      "completed_at": "2026-05-22T03:36:33.163Z",
+      "video_path": "/generated/session-1779420970800/output.mp4",
+      "follow_up_count": 0
+    },
+    {
+      "session_id": "session-1779394517866",
+      "topic": "explain me about friction — Chapter 1",
+      "subject": "Physics",
+      "duration_seconds": 28,
+      "completed_at": "2026-05-21T20:15:40.253Z",
+      "video_path": "/generated/session-1779394517866/output.mp4",
+      "follow_up_count": 0
+    }
+  ]
+}
