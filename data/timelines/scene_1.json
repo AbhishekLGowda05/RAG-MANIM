@@ -1,0 +1,135 @@
+{
+  "scene_id": 1,
+  "audio_duration": 8.197,
+  "word_timestamps": [
+    {
+      "word": "Let's",
+      "start": 0.0,
+      "end": 0.41
+    },
+    {
+      "word": "explore",
+      "start": 0.41,
+      "end": 0.82
+    },
+    {
+      "word": "Magnetism",
+      "start": 0.82,
+      "end": 1.23
+    },
+    {
+      "word": "Explained",
+      "start": 1.23,
+      "end": 1.639
+    },
+    {
+      "word": "through",
+      "start": 1.639,
+      "end": 2.049
+    },
+    {
+      "word": "Magnetic",
+      "start": 2.049,
+      "end": 2.459
+    },
+    {
+      "word": "Field",
+      "start": 2.459,
+      "end": 2.869
+    },
+    {
+      "word": "Lines,",
+      "start": 2.869,
+      "end": 3.279
+    },
+    {
+      "word": "which",
+      "start": 3.279,
+      "end": 3.689
+    },
+    {
+      "word": "helps",
+      "start": 3.689,
+      "end": 4.098
+    },
+    {
+      "word": "with",
+      "start": 4.098,
+      "end": 4.508
+    },
+    {
+      "word": "Understanding",
+      "start": 4.508,
+      "end": 4.918
+    },
+    {
+      "word": "Magnetism,",
+      "start": 4.918,
+      "end": 5.328
+    },
+    {
+      "word": "as",
+      "start": 5.328,
+      "end": 5.738
+    },
+    {
+      "word": "seen",
+      "start": 5.738,
+      "end": 6.148
+    },
+    {
+      "word": "when",
+      "start": 6.148,
+      "end": 6.558
+    },
+    {
+      "word": "a",
+      "start": 6.558,
+      "end": 6.967
+    },
+    {
+      "word": "Compass",
+      "start": 6.967,
+      "end": 7.377
+    },
+    {
+      "word": "Needle",
+      "start": 7.377,
+      "end": 7.787
+    },
+    {
+      "word": "Aligns.",
+      "start": 7.787,
+      "end": 8.197
+    }
+  ],
+  "timeline": {
+    "total": 8.197,
+    "events": [
+      {
+        "id": "e0",
+        "start": 0.57,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e1",
+        "start": 2.57,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e2",
+        "start": 4.508,
+        "run_time": 0.95,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e3",
+        "start": 6.967,
+        "run_time": 0.0,
+        "hold_after": 0.73
+      }
+    ]
+  }
+}

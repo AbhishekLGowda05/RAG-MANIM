@@ -1,0 +1,178 @@
+{
+  "magnet_north_south": {
+    "asset_id": "magnet",
+    "params": {
+      "label": "N",
+      "color": "red",
+      "direction": "north"
+    },
+    "scene_id": 1,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "compass_arrow": {
+    "asset_id": "arrow_force",
+    "params": {
+      "label": "Magnetic Field",
+      "color": "blue",
+      "direction": "south"
+    },
+    "scene_id": 1,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "magnet_north": {
+    "asset_id": "magnet",
+    "params": {
+      "label": "N",
+      "color": "red"
+    },
+    "scene_id": 3,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "magnet_south": {
+    "asset_id": "magnet",
+    "params": {
+      "label": "S",
+      "color": "blue"
+    },
+    "scene_id": 3,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "moving_charge": {
+    "asset_id": "ball",
+    "params": {
+      "color": "black"
+    },
+    "scene_id": 5,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "field_lines_north": {
+    "asset_id": "arrow_force",
+    "params": {
+      "direction": "outward"
+    },
+    "scene_id": 3,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "field_lines_south": {
+    "asset_id": "arrow_force",
+    "params": {
+      "direction": "inward"
+    },
+    "scene_id": 3,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "coil_motor": {
+    "asset_id": "gear",
+    "params": {
+      "label": "Motor"
+    },
+    "scene_id": 2,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "rotating_coil": {
+    "asset_id": "gear",
+    "params": {
+      "rotation": "clockwise"
+    },
+    "scene_id": 3,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "magnet_left": {
+    "asset_id": "magnet",
+    "params": {
+      "label": "N",
+      "color": "red"
+    },
+    "scene_id": 5,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "magnet_right": {
+    "asset_id": "magnet",
+    "params": {
+      "label": "S",
+      "color": "blue"
+    },
+    "scene_id": 5,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "coil": {
+    "asset_id": "gear",
+    "params": {
+      "color": "gray"
+    },
+    "scene_id": 5,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "field_lines": {
+    "asset_id": "arrow_force",
+    "params": {
+      "direction": "circular"
+    },
+    "scene_id": 5,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "charge": {
+    "asset_id": "ball",
+    "params": {
+      "label": "Charge"
+    },
+    "scene_id": 4,
+    "last_position": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

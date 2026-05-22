@@ -19,6 +19,7 @@ from modules.assets import ASSET_REGISTRY
 from modules.config import NVIDIA_PLANNER_MODEL, PATHS, get_logger
 from modules.llm.nvidia_client import NvidiaClient
 from modules.planning.asset_registry import get_registry
+from modules.planning.profile_context import format_learner_context
 from modules.templates import TEMPLATES
 
 logger = get_logger(__name__)
@@ -29,6 +30,8 @@ NEVER include run_time, duration, seconds, or timing fields.
 Respond ONLY with valid JSON. No markdown fences."""
 
 SEMANTIC_PLAN_PROMPT = """Fill the semantic plan for this scene.
+
+{learner_context}
 
 STORYBOARD ENTRY:
 {storyboard_entry}
@@ -75,7 +78,12 @@ Return ONLY this JSON shape:
 }}"""
 
 
-def build_semantic_plan(storyboard_entry: dict[str, Any]) -> dict[str, Any]:
+def build_semantic_plan(
+    storyboard_entry: dict[str, Any],
+    learner_profile: dict[str, Any] | None = None,
+    topic: str = "",
+    subject: str = "Physics",
+) -> dict[str, Any]:
     """Generate and validate a semantic plan for one storyboard entry."""
     scene_id = storyboard_entry["scene_id"]
     template_id = storyboard_entry["concept_template"]
@@ -88,6 +96,9 @@ def build_semantic_plan(storyboard_entry: dict[str, Any]) -> dict[str, Any]:
     allowed_events = sorted(getattr(template_cls, "ALLOWED_EVENTS", set()))
     asset_ids = sorted(ASSET_REGISTRY.keys())
     anchor_example = storyboard_entry.get("anchor_example", "")
+    learner_context = format_learner_context(
+        learner_profile, topic or storyboard_entry.get("title", ""), subject
+    )
 
     client = NvidiaClient()
     prompt = SEMANTIC_PLAN_PROMPT.format(
@@ -97,6 +108,7 @@ def build_semantic_plan(storyboard_entry: dict[str, Any]) -> dict[str, Any]:
         asset_ids=", ".join(asset_ids),
         scene_id=scene_id,
         anchor_example=anchor_example,
+        learner_context=learner_context,
     )
     messages = [
         {"role": "system", "content": SEMANTIC_PLAN_SYSTEM},
@@ -105,10 +117,11 @@ def build_semantic_plan(storyboard_entry: dict[str, Any]) -> dict[str, Any]:
     raw = client.chat_json(NVIDIA_PLANNER_MODEL, messages, temperature=0.3, max_tokens=4096)
     plan = _validate_plan(raw, scene_id, template_id, allowed_events)
 
-    # Carry over optional storyboard fields into plan
     for field in ("subtitle", "key_term", "summary_points", "learning_goal"):
         if field in storyboard_entry and field not in plan:
             plan[field] = storyboard_entry[field]
+
+    plan["_learner_context"] = learner_context
 
     # Register all assets in the global registry
     registry = get_registry()
@@ -129,8 +142,16 @@ def build_semantic_plan(storyboard_entry: dict[str, Any]) -> dict[str, Any]:
     return plan
 
 
-def build_all_semantic_plans(storyboard: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [build_semantic_plan(entry) for entry in storyboard]
+def build_all_semantic_plans(
+    storyboard: list[dict[str, Any]],
+    learner_profile: dict[str, Any] | None = None,
+    topic: str = "",
+    subject: str = "Physics",
+) -> list[dict[str, Any]]:
+    return [
+        build_semantic_plan(entry, learner_profile=learner_profile, topic=topic, subject=subject)
+        for entry in storyboard
+    ]
 
 
 # ---------------------------------------------------------------------------

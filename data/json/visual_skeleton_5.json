@@ -1,0 +1,53 @@
+{
+  "scene_id": 5,
+  "objects": [
+    {
+      "id": "title",
+      "type": "Text",
+      "content": "Conclusion",
+      "action": "Write",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "equation",
+      "type": "Text",
+      "content": "v = d/t",
+      "action": "Create",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "sports_arrow",
+      "type": "Arrow",
+      "content": "Motion",
+      "action": "Indicate",
+      "beat_index": 1,
+      "weight": 0.5
+    },
+    {
+      "id": "sports_dot",
+      "type": "Dot",
+      "content": "Object",
+      "action": "GrowFromCenter",
+      "beat_index": 1,
+      "weight": 0.5
+    },
+    {
+      "id": "tech_square",
+      "type": "Square",
+      "content": "Innovation",
+      "action": "FadeIn",
+      "beat_index": 2,
+      "weight": 0.5
+    },
+    {
+      "id": "tech_line",
+      "type": "Line",
+      "content": "Progress",
+      "action": "Create",
+      "beat_index": 2,
+      "weight": 0.5
+    }
+  ]
+}

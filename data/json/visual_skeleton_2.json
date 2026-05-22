@@ -1,0 +1,53 @@
+{
+  "scene_id": 2,
+  "objects": [
+    {
+      "id": "title",
+      "type": "Text",
+      "content": "Velocity Components",
+      "action": "Write",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "axes",
+      "type": "Line",
+      "content": "",
+      "action": "Create",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "horizontal_motion",
+      "type": "Arrow",
+      "content": "Constant",
+      "action": "Indicate",
+      "beat_index": 1,
+      "weight": 0.5
+    },
+    {
+      "id": "vertical_motion",
+      "type": "Arrow",
+      "content": "Changing",
+      "action": "Indicate",
+      "beat_index": 1,
+      "weight": 0.5
+    },
+    {
+      "id": "projectile_path",
+      "type": "Line",
+      "content": "",
+      "action": "GrowFromCenter",
+      "beat_index": 2,
+      "weight": 0.5
+    },
+    {
+      "id": "projectile",
+      "type": "Dot",
+      "content": "",
+      "action": "FadeIn",
+      "beat_index": 2,
+      "weight": 0.5
+    }
+  ]
+}

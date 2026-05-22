@@ -1,0 +1,69 @@
+{
+  "scene_id": 1,
+  "concept_template": "intro",
+  "title": "Magnetism Introduction",
+  "anchor_example": "A compass needle aligning with Earth's magnetic field",
+  "assets": [
+    {
+      "role": "main_magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_north_south",
+      "params": {
+        "label": "N",
+        "color": "red",
+        "direction": "north"
+      }
+    },
+    {
+      "role": "compass_needle",
+      "asset_id": "arrow_force",
+      "instance_id": "compass_arrow",
+      "params": {
+        "label": "Magnetic Field",
+        "color": "blue",
+        "direction": "south"
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "e0",
+      "type": "place_title",
+      "targets": [],
+      "anchor_phrase": "Magnetism Explained",
+      "phase": "before",
+      "importance": 5
+    },
+    {
+      "id": "e1",
+      "type": "highlight_term",
+      "targets": [
+        "magnet_north_south"
+      ],
+      "anchor_phrase": "Magnetic Field Lines",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e2",
+      "type": "place_subtitle",
+      "targets": [],
+      "anchor_phrase": "Understanding Magnetism",
+      "phase": "on",
+      "importance": 3
+    },
+    {
+      "id": "e3",
+      "type": "hold",
+      "targets": [
+        "compass_arrow"
+      ],
+      "anchor_phrase": "Compass Needle Aligns",
+      "phase": "on",
+      "importance": 4
+    }
+  ],
+  "subtitle": "Understanding Magnetism and Its Effects",
+  "key_term": "Magnetism",
+  "learning_goal": "Introduce the concept of magnetism"
+}

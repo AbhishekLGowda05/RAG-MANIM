@@ -1,0 +1,197 @@
+{
+  "scene_id": 2,
+  "audio_duration": 10.983,
+  "word_timestamps": [
+    {
+      "word": "As",
+      "start": 0.0,
+      "end": 0.366
+    },
+    {
+      "word": "a",
+      "start": 0.366,
+      "end": 0.732
+    },
+    {
+      "word": "charge",
+      "start": 0.732,
+      "end": 1.098
+    },
+    {
+      "word": "moves,",
+      "start": 1.098,
+      "end": 1.464
+    },
+    {
+      "word": "a",
+      "start": 1.464,
+      "end": 1.831
+    },
+    {
+      "word": "magnetic",
+      "start": 1.831,
+      "end": 2.197
+    },
+    {
+      "word": "field",
+      "start": 2.197,
+      "end": 2.563
+    },
+    {
+      "word": "forms,",
+      "start": 2.563,
+      "end": 2.929
+    },
+    {
+      "word": "where",
+      "start": 2.929,
+      "end": 3.295
+    },
+    {
+      "word": "opposite",
+      "start": 3.295,
+      "end": 3.661
+    },
+    {
+      "word": "poles",
+      "start": 3.661,
+      "end": 4.027
+    },
+    {
+      "word": "attract",
+      "start": 4.027,
+      "end": 4.393
+    },
+    {
+      "word": "and",
+      "start": 4.393,
+      "end": 4.759
+    },
+    {
+      "word": "same",
+      "start": 4.759,
+      "end": 5.125
+    },
+    {
+      "word": "poles",
+      "start": 5.125,
+      "end": 5.492
+    },
+    {
+      "word": "repel,",
+      "start": 5.492,
+      "end": 5.858
+    },
+    {
+      "word": "then",
+      "start": 5.858,
+      "end": 6.224
+    },
+    {
+      "word": "poles",
+      "start": 6.224,
+      "end": 6.59
+    },
+    {
+      "word": "swap,",
+      "start": 6.59,
+      "end": 6.956
+    },
+    {
+      "word": "illustrating",
+      "start": 6.956,
+      "end": 7.322
+    },
+    {
+      "word": "the",
+      "start": 7.322,
+      "end": 7.688
+    },
+    {
+      "word": "right",
+      "start": 7.688,
+      "end": 8.054
+    },
+    {
+      "word": "hand",
+      "start": 8.054,
+      "end": 8.42
+    },
+    {
+      "word": "rule,",
+      "start": 8.42,
+      "end": 8.786
+    },
+    {
+      "word": "which",
+      "start": 8.786,
+      "end": 9.153
+    },
+    {
+      "word": "applies",
+      "start": 9.153,
+      "end": 9.519
+    },
+    {
+      "word": "to",
+      "start": 9.519,
+      "end": 9.885
+    },
+    {
+      "word": "the",
+      "start": 9.885,
+      "end": 10.251
+    },
+    {
+      "word": "motor",
+      "start": 10.251,
+      "end": 10.617
+    },
+    {
+      "word": "principle.",
+      "start": 10.617,
+      "end": 10.983
+    }
+  ],
+  "timeline": {
+    "total": 10.983,
+    "events": [
+      {
+        "id": "e0",
+        "start": 1.831,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e1",
+        "start": 3.831,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e2",
+        "start": 5.231,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e3",
+        "start": 6.631,
+        "run_time": 0.95,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e4",
+        "start": 7.688,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e5",
+        "start": 10.251,
+        "run_time": 0.0,
+        "hold_after": 0.232
+      }
+    ]
+  }
+}

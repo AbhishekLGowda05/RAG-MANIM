@@ -1,0 +1,283 @@
+{
+  "scene_id": 4,
+  "audio_duration": 16.544,
+  "word_timestamps": [
+    {
+      "word": "When",
+      "start": 0.0,
+      "end": 0.36
+    },
+    {
+      "word": "a",
+      "start": 0.36,
+      "end": 0.719
+    },
+    {
+      "word": "current",
+      "start": 0.719,
+      "end": 1.079
+    },
+    {
+      "word": "flows,",
+      "start": 1.079,
+      "end": 1.439
+    },
+    {
+      "word": "a",
+      "start": 1.439,
+      "end": 1.798
+    },
+    {
+      "word": "Magnetic",
+      "start": 1.798,
+      "end": 2.158
+    },
+    {
+      "word": "Field",
+      "start": 2.158,
+      "end": 2.518
+    },
+    {
+      "word": "Forms.",
+      "start": 2.518,
+      "end": 2.877
+    },
+    {
+      "word": "As",
+      "start": 2.877,
+      "end": 3.237
+    },
+    {
+      "word": "we",
+      "start": 3.237,
+      "end": 3.597
+    },
+    {
+      "word": "know,",
+      "start": 3.597,
+      "end": 3.956
+    },
+    {
+      "word": "Opposite",
+      "start": 3.956,
+      "end": 4.316
+    },
+    {
+      "word": "Poles",
+      "start": 4.316,
+      "end": 4.675
+    },
+    {
+      "word": "Attract,",
+      "start": 4.675,
+      "end": 5.035
+    },
+    {
+      "word": "and",
+      "start": 5.035,
+      "end": 5.395
+    },
+    {
+      "word": "we",
+      "start": 5.395,
+      "end": 5.754
+    },
+    {
+      "word": "can",
+      "start": 5.754,
+      "end": 6.114
+    },
+    {
+      "word": "predict",
+      "start": 6.114,
+      "end": 6.474
+    },
+    {
+      "word": "direction",
+      "start": 6.474,
+      "end": 6.833
+    },
+    {
+      "word": "using",
+      "start": 6.833,
+      "end": 7.193
+    },
+    {
+      "word": "the",
+      "start": 7.193,
+      "end": 7.553
+    },
+    {
+      "word": "Right",
+      "start": 7.553,
+      "end": 7.912
+    },
+    {
+      "word": "Hand",
+      "start": 7.912,
+      "end": 8.272
+    },
+    {
+      "word": "Rule,",
+      "start": 8.272,
+      "end": 8.632
+    },
+    {
+      "word": "placing",
+      "start": 8.632,
+      "end": 8.991
+    },
+    {
+      "word": "a",
+      "start": 8.991,
+      "end": 9.351
+    },
+    {
+      "word": "Coil",
+      "start": 9.351,
+      "end": 9.711
+    },
+    {
+      "word": "in",
+      "start": 9.711,
+      "end": 10.07
+    },
+    {
+      "word": "Magnetic",
+      "start": 10.07,
+      "end": 10.43
+    },
+    {
+      "word": "Field.",
+      "start": 10.43,
+      "end": 10.79
+    },
+    {
+      "word": "However,",
+      "start": 10.79,
+      "end": 11.149
+    },
+    {
+      "word": "Same",
+      "start": 11.149,
+      "end": 11.509
+    },
+    {
+      "word": "Poles",
+      "start": 11.509,
+      "end": 11.869
+    },
+    {
+      "word": "Repel,",
+      "start": 11.869,
+      "end": 12.228
+    },
+    {
+      "word": "and",
+      "start": 12.228,
+      "end": 12.588
+    },
+    {
+      "word": "when",
+      "start": 12.588,
+      "end": 12.947
+    },
+    {
+      "word": "they",
+      "start": 12.947,
+      "end": 13.307
+    },
+    {
+      "word": "switch,",
+      "start": 13.307,
+      "end": 13.667
+    },
+    {
+      "word": "Poles",
+      "start": 13.667,
+      "end": 14.026
+    },
+    {
+      "word": "Swap,",
+      "start": 14.026,
+      "end": 14.386
+    },
+    {
+      "word": "a",
+      "start": 14.386,
+      "end": 14.746
+    },
+    {
+      "word": "principle",
+      "start": 14.746,
+      "end": 15.105
+    },
+    {
+      "word": "used",
+      "start": 15.105,
+      "end": 15.465
+    },
+    {
+      "word": "in",
+      "start": 15.465,
+      "end": 15.825
+    },
+    {
+      "word": "Induction",
+      "start": 15.825,
+      "end": 16.184
+    },
+    {
+      "word": "Cooktops.",
+      "start": 16.184,
+      "end": 16.544
+    }
+  ],
+  "timeline": {
+    "total": 16.544,
+    "events": [
+      {
+        "id": "e0",
+        "start": 1.798,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e1",
+        "start": 3.956,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e2",
+        "start": 7.553,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e3",
+        "start": 9.553,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e4",
+        "start": 11.149,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e5",
+        "start": 13.667,
+        "run_time": 0.95,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e6",
+        "start": 15.825,
+        "run_time": 0.0,
+        "hold_after": 0.219
+      }
+    ]
+  }
+}

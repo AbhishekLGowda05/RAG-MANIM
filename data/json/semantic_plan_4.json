@@ -1,0 +1,126 @@
+{
+  "scene_id": 4,
+  "concept_template": "magnetism",
+  "title": "Electromagnetic Induction",
+  "anchor_example": "Induction cooktops",
+  "assets": [
+    {
+      "role": "magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_left",
+      "params": {
+        "label": "N",
+        "color": "red"
+      }
+    },
+    {
+      "role": "magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_right",
+      "params": {
+        "label": "S",
+        "color": "blue"
+      }
+    },
+    {
+      "role": "coil",
+      "asset_id": "gear",
+      "instance_id": "coil",
+      "params": {
+        "label": "Coil"
+      }
+    },
+    {
+      "role": "field_lines",
+      "asset_id": "arrow_force",
+      "instance_id": "field_lines",
+      "params": {
+        "label": "Magnetic Field"
+      }
+    },
+    {
+      "role": "charge",
+      "asset_id": "ball",
+      "instance_id": "charge",
+      "params": {
+        "label": "Charge"
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "e0",
+      "type": "field_lines",
+      "targets": [
+        "magnet_left",
+        "magnet_right"
+      ],
+      "anchor_phrase": "Magnetic Field Forms",
+      "phase": "on",
+      "importance": 5
+    },
+    {
+      "id": "e1",
+      "type": "attract_arrows",
+      "targets": [
+        "magnet_left",
+        "magnet_right"
+      ],
+      "anchor_phrase": "Opposite Poles Attract",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e2",
+      "type": "show_rule",
+      "targets": [
+        "charge"
+      ],
+      "anchor_phrase": "Right Hand Rule",
+      "phase": "on",
+      "importance": 5
+    },
+    {
+      "id": "e3",
+      "type": "place",
+      "targets": [
+        "coil"
+      ],
+      "anchor_phrase": "Coil in Magnetic Field",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e4",
+      "type": "repel_arrows",
+      "targets": [
+        "magnet_left",
+        "magnet_right"
+      ],
+      "anchor_phrase": "Same Poles Repel",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e5",
+      "type": "reset",
+      "targets": [
+        "magnet_right"
+      ],
+      "anchor_phrase": "Poles Swap",
+      "phase": "on",
+      "importance": 3
+    },
+    {
+      "id": "e6",
+      "type": "hold",
+      "targets": [
+        "coil"
+      ],
+      "anchor_phrase": "Induction Cooktops",
+      "phase": "on",
+      "importance": 5
+    }
+  ],
+  "learning_goal": "Explain the concept of electromagnetic induction"
+}
