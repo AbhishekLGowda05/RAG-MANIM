@@ -1,0 +1,10 @@
+manim
+google-generativeai
+requests
+python-dotenv
+pydub
+ffmpeg-python
+moviepy
+fastapi
+uvicorn
+gtts

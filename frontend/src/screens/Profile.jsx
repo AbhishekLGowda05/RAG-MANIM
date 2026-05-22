@@ -9,6 +9,8 @@ export default function Profile() {
   const [examTargets, setExamTargets] = useState(profile.exam_target || []);
   const [learningStyle, setLearningStyle] = useState(profile.learning_style || 'visual');
   const [pace, setPace] = useState(profile.pace_preference || 'balanced');
+  const [geminiApiKey, setGeminiApiKey] = useState(localStorage.getItem('GEMINI_API_KEY') || '');
+  const [nvidiaApiKey, setNvidiaApiKey] = useState(localStorage.getItem('NVIDIA_API_KEY') || '');
   
   const [confidence, setConfidence] = useState({
     Chemistry: profile.confidence_map?.Chemistry || 50,
@@ -44,6 +46,9 @@ export default function Profile() {
         pace_preference: pace,
         confidence_map: confidence
       });
+      localStorage.setItem('GEMINI_API_KEY', geminiApiKey);
+      localStorage.setItem('NVIDIA_API_KEY', nvidiaApiKey);
+      localStorage.setItem('GROQ_API_KEY', geminiApiKey || nvidiaApiKey);
       setMessage('Profile settings saved and synchronised with prompt context!');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
@@ -253,6 +258,69 @@ export default function Profile() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* API Integration & Keys */}
+        <div className="learnos-card" style={{ background: 'var(--bg-surface)' }}>
+          <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-amber)', marginBottom: 'var(--space-4)', marginTop: 0 }}>
+            5. API Integration & Keys
+          </h3>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            
+            {/* Gemini API Key */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '500' }}>
+                Google Gemini API Key <span style={{ color: 'var(--accent-teal)', fontSize: '10px' }}>(Recommended - Free/Fast)</span>
+              </label>
+              <input
+                type="password"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                style={{
+                  background: 'var(--bg-raised)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--r-md)',
+                  padding: '10px var(--space-4)',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  outline: 'none',
+                  fontFamily: 'var(--font-mono)'
+                }}
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Obtain a Gemini key for free at the <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>Google AI Studio Console</a>.
+              </span>
+            </div>
+
+            {/* NVIDIA NIM API Key */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '500' }}>
+                NVIDIA NIM API Key <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>(Optional - Alternate LLM Provider)</span>
+              </label>
+              <input
+                type="password"
+                value={nvidiaApiKey}
+                onChange={(e) => setNvidiaApiKey(e.target.value)}
+                placeholder="nvapi-..."
+                style={{
+                  background: 'var(--bg-raised)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--r-md)',
+                  padding: '10px var(--space-4)',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  outline: 'none',
+                  fontFamily: 'var(--font-mono)'
+                }}
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Obtain a developer key from the <a href="https://build.nvidia.com/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-blue)', textDecoration: 'underline' }}>NVIDIA Build Portal</a>.
+              </span>
+            </div>
+
           </div>
         </div>
 

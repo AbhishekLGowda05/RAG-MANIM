@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 const SessionContext = createContext();
 
 export const useSession = () => useContext(SessionContext);
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 const DEFAULT_SESSION = {
   session_id: '',
@@ -32,7 +34,11 @@ export const SessionProvider = ({ children }) => {
         if (response.ok) {
           const data = await response.json();
           if (data && data.session_id) {
-            setSession(data);
+            // Ensure video_url points to backend
+            const videoUrl = data.video_url?.startsWith('http') 
+              ? data.video_url 
+              : `${BACKEND_URL}${data.video_url}`;
+            setSession({ ...data, video_url: videoUrl });
           }
         }
       } catch (err) {
@@ -144,10 +150,18 @@ Do you want me to derive the mathematical equality or show another visual analog
     setActiveProgress(5);
 
     try {
+      const geminiApiKey = localStorage.getItem('GEMINI_API_KEY') || '';
+      const nvidiaApiKey = localStorage.getItem('NVIDIA_API_KEY') || '';
       const response = await fetch('/api/pipeline/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: query, subject })
+        body: JSON.stringify({ 
+          topic: query, 
+          subject, 
+          apiKey: geminiApiKey || nvidiaApiKey, 
+          geminiApiKey, 
+          nvidiaApiKey 
+        })
       });
 
       if (!response.ok) {
@@ -182,10 +196,14 @@ Do you want me to derive the mathematical equality or show another visual analog
 
           if (data.stage === 'complete') {
             const finalPayload = data.data;
+            // Convert relative path to absolute URL pointing to backend
+            const videoUrl = finalPayload.video_url?.startsWith('http') 
+              ? finalPayload.video_url 
+              : `${BACKEND_URL}${finalPayload.video_url}`;
             setSession(prev => ({
               ...prev,
               pipeline_stage: 'complete',
-              video_url: finalPayload.video_url,
+              video_url: videoUrl,
               explanation_package: finalPayload.explanation_package,
               scene_plan: finalPayload.scene_plan,
               script: finalPayload.script,
@@ -238,7 +256,11 @@ Do you want me to derive the mathematical equality or show another visual analog
         const data = await response.json();
         // Since we write session.json per session, in a single-user system we reload the active one
         if (data && data.session_id === sid) {
-          setSession(data);
+          // Ensure video_url points to backend
+          const videoUrl = data.video_url?.startsWith('http') 
+            ? data.video_url 
+            : `${BACKEND_URL}${data.video_url}`;
+          setSession({ ...data, video_url: videoUrl });
         } else {
           // If the selected session is from history but is different, load its details from history
           const hRes = await fetch('/api/load/history.json');
@@ -247,12 +269,15 @@ Do you want me to derive the mathematical equality or show another visual analog
             const hs = hData.sessions?.find(s => s.session_id === sid);
             if (hs) {
               // Construct a temporary session view
+              const videoUrl = hs.video_path?.startsWith('http') 
+                ? hs.video_path 
+                : `${BACKEND_URL}${hs.video_path}`;
               setSession({
                 session_id: sid,
                 topic_query: hs.topic.split('—')[0].trim(),
                 topic_resolved: hs.topic,
                 pipeline_stage: 'complete',
-                video_url: hs.video_path,
+                video_url: videoUrl,
                 notes: `# Loaded session: ${hs.topic}`,
                 messages: [{ role: 'assistant', content: `Rewatching previously saved module for **${hs.topic}**.`, timestamp: new Date().toISOString() }],
                 explanation_package: {

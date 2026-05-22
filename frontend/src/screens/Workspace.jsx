@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSession } from '../context/SessionContext';
 import VideoPlayer from '../components/VideoPlayer';
 import TranscriptPanel from '../components/TranscriptPanel';
@@ -18,6 +18,11 @@ export default function Workspace() {
 
   const [inputTopic, setInputTopic] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('Physics');
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    setCurrentTime(0);
+  }, [session.video_url]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -192,13 +197,13 @@ export default function Workspace() {
               <VideoPlayer
                 videoUrl={session.video_url}
                 scenePlan={session.scene_plan}
-                onTimeUpdate={() => {}}
+                onTimeUpdate={setCurrentTime}
               />
 
               {/* Time synchronized word highlight scrolling transcription */}
               <div style={{ flex: 1, minHeight: '200px' }}>
                 <TranscriptPanel
-                  currentTime={0} // Linked automatically within components in static fallback or pass value
+                  currentTime={currentTime}
                   scenePlan={session.scene_plan}
                   isPipelineRunning={isPipelineRunning}
                 />
