@@ -1,1 +1,0 @@
-"""Mechanics concept templates."""
