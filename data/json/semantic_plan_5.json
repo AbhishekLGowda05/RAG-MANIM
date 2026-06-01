@@ -1,0 +1,99 @@
+{
+  "scene_id": 5,
+  "concept_template": "summary",
+  "title": "Magnetism Summary",
+  "anchor_example": "Magnetism and electromagnetism",
+  "assets": [
+    {
+      "role": "magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_left",
+      "params": {
+        "label": "N",
+        "color": "red"
+      }
+    },
+    {
+      "role": "magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_right",
+      "params": {
+        "label": "S",
+        "color": "blue"
+      }
+    },
+    {
+      "role": "charge",
+      "asset_id": "ball",
+      "instance_id": "moving_charge",
+      "params": {
+        "color": "black"
+      }
+    },
+    {
+      "role": "field_lines",
+      "asset_id": "arrow_force",
+      "instance_id": "field_lines",
+      "params": {
+        "direction": "circular"
+      }
+    },
+    {
+      "role": "coil",
+      "asset_id": "gear",
+      "instance_id": "coil",
+      "params": {
+        "color": "gray"
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "e0",
+      "type": "place_point",
+      "targets": [
+        "magnet_left",
+        "magnet_right"
+      ],
+      "anchor_phrase": "Magnetism arises",
+      "phase": "on",
+      "importance": 5
+    },
+    {
+      "id": "e1",
+      "type": "place_point",
+      "targets": [
+        "moving_charge"
+      ],
+      "anchor_phrase": "Moving charges create",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e2",
+      "type": "hold",
+      "targets": [
+        "field_lines"
+      ],
+      "anchor_phrase": "Magnetic fields interact",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e3",
+      "type": "place_point",
+      "targets": [
+        "coil"
+      ],
+      "anchor_phrase": "Electromagnetic induction",
+      "phase": "on",
+      "importance": 5
+    }
+  ],
+  "summary_points": [
+    "Magnetism arises from moving charges",
+    "Magnetic fields interact with charges and other magnetic fields",
+    "Electromagnetic induction is a fundamental concept in electromagnetism"
+  ],
+  "learning_goal": "Consolidate learning"
+}

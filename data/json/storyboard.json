@@ -1,0 +1,44 @@
+[
+  {
+    "scene_id": 1,
+    "concept_template": "intro",
+    "title": "Magnetism Explanation",
+    "anchor_example": "A compass needle aligning with Earth's magnetic field",
+    "learning_goal": "Introduce the concept of magnetism",
+    "subtitle": "Understanding Magnetism and Its Effects",
+    "key_term": "Magnetism"
+  },
+  {
+    "scene_id": 2,
+    "concept_template": "magnetism",
+    "title": "Magnetic Fields and Charges",
+    "anchor_example": "An electric motor",
+    "learning_goal": "Explain how moving charges create magnetic fields"
+  },
+  {
+    "scene_id": 3,
+    "concept_template": "magnetism",
+    "title": "Magnetic Field Interactions",
+    "anchor_example": "A generator (dynamo)",
+    "learning_goal": "Describe the interactions between magnetic fields and charges"
+  },
+  {
+    "scene_id": 4,
+    "concept_template": "magnetism",
+    "title": "Electromagnetic Induction",
+    "anchor_example": "Induction cooktops",
+    "learning_goal": "Explain the concept of electromagnetic induction"
+  },
+  {
+    "scene_id": 5,
+    "concept_template": "summary",
+    "title": "Key Takeaways",
+    "anchor_example": "Magnetism and electromagnetism",
+    "learning_goal": "Consolidate learning",
+    "summary_points": [
+      "Magnetism arises from moving charges",
+      "Magnetic fields interact with charges and other magnetic fields",
+      "Electromagnetic induction is a fundamental concept in electromagnetism"
+    ]
+  }
+]

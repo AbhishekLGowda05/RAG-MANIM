@@ -1,0 +1,107 @@
+[
+  {
+    "scene_id": 1,
+    "concept": "Introduction to Velocity",
+    "anchor_example": "Car Movement",
+    "narration": "Velocity is a measure of an object's speed in a specific direction. It's a vector quantity that includes both magnitude and direction. Velocity is crucial in understanding motion.",
+    "visual_instruction": "Show a car moving on a road",
+    "beats": [
+      {
+        "phrase": "Velocity is a measure",
+        "visual": "Animate a car accelerating"
+      },
+      {
+        "phrase": "vector quantity that includes",
+        "visual": "Display a vector diagram"
+      },
+      {
+        "phrase": "crucial in understanding motion",
+        "visual": "Show a car changing direction"
+      }
+    ]
+  },
+  {
+    "scene_id": 2,
+    "concept": "Velocity Components",
+    "anchor_example": "Projectile Motion",
+    "narration": "Velocity has two components: horizontal and vertical. The horizontal component remains constant, while the vertical component changes due to gravity. This affects the object's trajectory.",
+    "visual_instruction": "Illustrate a projectile's path",
+    "beats": [
+      {
+        "phrase": "Velocity has two components",
+        "visual": "Draw a horizontal and vertical axis"
+      },
+      {
+        "phrase": "horizontal component remains constant",
+        "visual": "Show a constant horizontal motion"
+      },
+      {
+        "phrase": "affects the object's trajectory",
+        "visual": "Animate a projectile's curved path"
+      }
+    ]
+  },
+  {
+    "scene_id": 3,
+    "concept": "Velocity Calculation",
+    "anchor_example": "Distance and Time",
+    "narration": "Velocity is calculated by dividing the distance traveled by the time taken. This gives us the average velocity. Instantaneous velocity is the velocity at a specific point in time.",
+    "visual_instruction": "Show a distance-time graph",
+    "beats": [
+      {
+        "phrase": "Velocity is calculated by",
+        "visual": "Write a formula on a blackboard"
+      },
+      {
+        "phrase": "dividing the distance traveled",
+        "visual": "Animate a distance measurement"
+      },
+      {
+        "phrase": "instantaneous velocity is the velocity",
+        "visual": "Highlight a point on the graph"
+      }
+    ]
+  },
+  {
+    "scene_id": 4,
+    "concept": "Velocity Types",
+    "anchor_example": "Uniform and Non-Uniform",
+    "narration": "There are different types of velocity, including uniform and non-uniform. Uniform velocity has a constant speed and direction, while non-uniform velocity changes over time.",
+    "visual_instruction": "Compare uniform and non-uniform motion",
+    "beats": [
+      {
+        "phrase": "There are different types",
+        "visual": "List velocity types on a screen"
+      },
+      {
+        "phrase": "uniform velocity has a constant",
+        "visual": "Show a constant speed graph"
+      },
+      {
+        "phrase": "non-uniform velocity changes over time",
+        "visual": "Animate an object accelerating"
+      }
+    ]
+  },
+  {
+    "scene_id": 5,
+    "concept": "Conclusion",
+    "anchor_example": "Real-World Applications",
+    "narration": "Understanding velocity is essential in various fields, such as physics, engineering, and sports. It helps us analyze and predict motion, making it a fundamental concept in science and technology.",
+    "visual_instruction": "Show a montage of real-world applications",
+    "beats": [
+      {
+        "phrase": "Understanding velocity is essential",
+        "visual": "Display a physics equation"
+      },
+      {
+        "phrase": "analyze and predict motion",
+        "visual": "Animate a sports scenario"
+      },
+      {
+        "phrase": "fundamental concept in science and technology",
+        "visual": "Show a technological innovation"
+      }
+    ]
+  }
+]

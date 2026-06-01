@@ -1,0 +1,115 @@
+{
+  "scene_id": 5,
+  "audio_duration": 8.661,
+  "word_timestamps": [
+    {
+      "word": "Magnetism",
+      "start": 0.0,
+      "end": 0.541
+    },
+    {
+      "word": "arises",
+      "start": 0.541,
+      "end": 1.083
+    },
+    {
+      "word": "from",
+      "start": 1.083,
+      "end": 1.624
+    },
+    {
+      "word": "currents,",
+      "start": 1.624,
+      "end": 2.165
+    },
+    {
+      "word": "where",
+      "start": 2.165,
+      "end": 2.707
+    },
+    {
+      "word": "Moving",
+      "start": 2.707,
+      "end": 3.248
+    },
+    {
+      "word": "charges",
+      "start": 3.248,
+      "end": 3.789
+    },
+    {
+      "word": "create",
+      "start": 3.789,
+      "end": 4.33
+    },
+    {
+      "word": "forces,",
+      "start": 4.33,
+      "end": 4.872
+    },
+    {
+      "word": "and",
+      "start": 4.872,
+      "end": 5.413
+    },
+    {
+      "word": "Magnetic",
+      "start": 5.413,
+      "end": 5.954
+    },
+    {
+      "word": "fields",
+      "start": 5.954,
+      "end": 6.496
+    },
+    {
+      "word": "interact,",
+      "start": 6.496,
+      "end": 7.037
+    },
+    {
+      "word": "enabling",
+      "start": 7.037,
+      "end": 7.578
+    },
+    {
+      "word": "Electromagnetic",
+      "start": 7.578,
+      "end": 8.12
+    },
+    {
+      "word": "induction.",
+      "start": 8.12,
+      "end": 8.661
+    }
+  ],
+  "timeline": {
+    "total": 8.661,
+    "events": [
+      {
+        "id": "e0",
+        "start": 0.0,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e1",
+        "start": 2.707,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e2",
+        "start": 5.413,
+        "run_time": 0.0,
+        "hold_after": 1.624
+      },
+      {
+        "id": "e3",
+        "start": 7.578,
+        "run_time": 0.583,
+        "hold_after": 0.0
+      }
+    ]
+  }
+}

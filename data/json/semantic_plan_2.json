@@ -1,0 +1,127 @@
+{
+  "scene_id": 2,
+  "concept_template": "magnetism",
+  "title": "Magnetic Fields and Charges",
+  "anchor_example": "An electric motor",
+  "assets": [
+    {
+      "role": "magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_north",
+      "params": {
+        "label": "N",
+        "color": "RED"
+      }
+    },
+    {
+      "role": "magnet",
+      "asset_id": "magnet",
+      "instance_id": "magnet_south",
+      "params": {
+        "label": "S",
+        "color": "BLUE"
+      }
+    },
+    {
+      "role": "charge",
+      "asset_id": "ball",
+      "instance_id": "moving_charge",
+      "params": {
+        "label": "q"
+      }
+    },
+    {
+      "role": "field_lines",
+      "asset_id": "arrow_force",
+      "instance_id": "field_lines_north",
+      "params": {
+        "label": "B",
+        "direction": "outward"
+      }
+    },
+    {
+      "role": "field_lines",
+      "asset_id": "arrow_force",
+      "instance_id": "field_lines_south",
+      "params": {
+        "label": "B",
+        "direction": "inward"
+      }
+    },
+    {
+      "role": "coil",
+      "asset_id": "gear",
+      "instance_id": "coil_motor",
+      "params": {
+        "label": "Motor"
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "e0",
+      "type": "field_lines",
+      "targets": [
+        "magnet_north",
+        "magnet_south"
+      ],
+      "anchor_phrase": "Magnetic field forms",
+      "phase": "on",
+      "importance": 5
+    },
+    {
+      "id": "e1",
+      "type": "attract_arrows",
+      "targets": [
+        "magnet_north",
+        "magnet_south"
+      ],
+      "anchor_phrase": "Opposite poles attract",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e2",
+      "type": "repel_arrows",
+      "targets": [
+        "magnet_north",
+        "magnet_south"
+      ],
+      "anchor_phrase": "Same poles repel",
+      "phase": "on",
+      "importance": 4
+    },
+    {
+      "id": "e3",
+      "type": "reset",
+      "targets": [
+        "magnet_south"
+      ],
+      "anchor_phrase": "Poles swap",
+      "phase": "before",
+      "importance": 3
+    },
+    {
+      "id": "e4",
+      "type": "show_rule",
+      "targets": [
+        "moving_charge",
+        "field_lines_north"
+      ],
+      "anchor_phrase": "Right hand rule",
+      "phase": "on",
+      "importance": 5
+    },
+    {
+      "id": "e5",
+      "type": "hold",
+      "targets": [
+        "coil_motor"
+      ],
+      "anchor_phrase": "Motor principle",
+      "phase": "on",
+      "importance": 5
+    }
+  ],
+  "learning_goal": "Explain how moving charges create magnetic fields"
+}

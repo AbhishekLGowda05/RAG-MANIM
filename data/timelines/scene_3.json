@@ -1,0 +1,276 @@
+{
+  "scene_id": 3,
+  "audio_duration": 17.218,
+  "word_timestamps": [
+    {
+      "word": "Bar",
+      "start": 0.0,
+      "end": 0.42
+    },
+    {
+      "word": "magnet",
+      "start": 0.42,
+      "end": 0.84
+    },
+    {
+      "word": "poles",
+      "start": 0.84,
+      "end": 1.26
+    },
+    {
+      "word": "create",
+      "start": 1.26,
+      "end": 1.68
+    },
+    {
+      "word": "Magnetic",
+      "start": 1.68,
+      "end": 2.1
+    },
+    {
+      "word": "field",
+      "start": 2.1,
+      "end": 2.52
+    },
+    {
+      "word": "lines,",
+      "start": 2.52,
+      "end": 2.94
+    },
+    {
+      "word": "which",
+      "start": 2.94,
+      "end": 3.36
+    },
+    {
+      "word": "exhibit",
+      "start": 3.36,
+      "end": 3.78
+    },
+    {
+      "word": "Magnetic",
+      "start": 3.78,
+      "end": 4.2
+    },
+    {
+      "word": "attraction,",
+      "start": 4.2,
+      "end": 4.619
+    },
+    {
+      "word": "but",
+      "start": 4.619,
+      "end": 5.039
+    },
+    {
+      "word": "after",
+      "start": 5.039,
+      "end": 5.459
+    },
+    {
+      "word": "a",
+      "start": 5.459,
+      "end": 5.879
+    },
+    {
+      "word": "Pole",
+      "start": 5.879,
+      "end": 6.299
+    },
+    {
+      "word": "swap,",
+      "start": 6.299,
+      "end": 6.719
+    },
+    {
+      "word": "they",
+      "start": 6.719,
+      "end": 7.139
+    },
+    {
+      "word": "show",
+      "start": 7.139,
+      "end": 7.559
+    },
+    {
+      "word": "Magnetic",
+      "start": 7.559,
+      "end": 7.979
+    },
+    {
+      "word": "repulsion,",
+      "start": 7.979,
+      "end": 8.399
+    },
+    {
+      "word": "influencing",
+      "start": 8.399,
+      "end": 8.819
+    },
+    {
+      "word": "a",
+      "start": 8.819,
+      "end": 9.239
+    },
+    {
+      "word": "Moving",
+      "start": 9.239,
+      "end": 9.659
+    },
+    {
+      "word": "charge,",
+      "start": 9.659,
+      "end": 10.079
+    },
+    {
+      "word": "producing",
+      "start": 10.079,
+      "end": 10.499
+    },
+    {
+      "word": "a",
+      "start": 10.499,
+      "end": 10.919
+    },
+    {
+      "word": "Circular",
+      "start": 10.919,
+      "end": 11.339
+    },
+    {
+      "word": "magnetic",
+      "start": 11.339,
+      "end": 11.759
+    },
+    {
+      "word": "field",
+      "start": 11.759,
+      "end": 12.179
+    },
+    {
+      "word": "around",
+      "start": 12.179,
+      "end": 12.599
+    },
+    {
+      "word": "a",
+      "start": 12.599,
+      "end": 13.018
+    },
+    {
+      "word": "Rotating",
+      "start": 13.018,
+      "end": 13.438
+    },
+    {
+      "word": "coil,",
+      "start": 13.438,
+      "end": 13.858
+    },
+    {
+      "word": "demonstrating",
+      "start": 13.858,
+      "end": 14.278
+    },
+    {
+      "word": "the",
+      "start": 14.278,
+      "end": 14.698
+    },
+    {
+      "word": "Motor",
+      "start": 14.698,
+      "end": 15.118
+    },
+    {
+      "word": "principle",
+      "start": 15.118,
+      "end": 15.538
+    },
+    {
+      "word": "and",
+      "start": 15.538,
+      "end": 15.958
+    },
+    {
+      "word": "the",
+      "start": 15.958,
+      "end": 16.378
+    },
+    {
+      "word": "Generator",
+      "start": 16.378,
+      "end": 16.798
+    },
+    {
+      "word": "principle.",
+      "start": 16.798,
+      "end": 17.218
+    }
+  ],
+  "timeline": {
+    "total": 17.218,
+    "events": [
+      {
+        "id": "e0",
+        "start": 0.0,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e1",
+        "start": 2.0,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e2",
+        "start": 4.0,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e3",
+        "start": 5.629,
+        "run_time": 0.95,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e4",
+        "start": 7.559,
+        "run_time": 1.4,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e5",
+        "start": 9.239,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e6",
+        "start": 11.239,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e7",
+        "start": 13.239,
+        "run_time": 0.0,
+        "hold_after": 0.84
+      },
+      {
+        "id": "e8",
+        "start": 14.698,
+        "run_time": 2.0,
+        "hold_after": 0.0
+      },
+      {
+        "id": "e9",
+        "start": 16.698,
+        "run_time": 0.35,
+        "hold_after": 0.0
+      }
+    ]
+  }
+}

@@ -17,6 +17,11 @@ from typing import Any
 
 from modules.config import NVIDIA_PLANNER_MODEL, PATHS, get_logger
 from modules.llm.nvidia_client import NvidiaClient
+from modules.planning.profile_context import (
+    format_learner_context,
+    normalize_profile,
+    pace_word_budget,
+)
 
 logger = get_logger(__name__)
 
@@ -27,6 +32,8 @@ Respond with ONLY the narration text. No JSON, no commentary."""
 
 NARRATION_PROMPT = """Write narration for this scene. It will be read aloud over an animation.
 
+{learner_context}
+
 SCENE TITLE: {title}
 ANCHOR EXAMPLE: {anchor_example}
 LEARNING GOAL: {learning_goal}
@@ -35,11 +42,12 @@ REQUIRED PHRASES (include EVERY phrase VERBATIM in this order):
 {phrases}
 
 RULES:
-- Length: 40-65 words
-- Conversational, clear, educational tone
-- Each required phrase must appear EXACTLY as written above — do not paraphrase
-- The phrases must appear in the order listed
-- Surround each required phrase with natural connective language
+- Length: {word_lo}-{word_hi} words (calibrated to the learner's pace).
+- Conversational, clear, educational tone matching the learner's level.
+- Each required phrase must appear EXACTLY as written above — do not paraphrase.
+- The phrases must appear in the order listed.
+- Surround each required phrase with natural connective language.
+- For low-confidence learners, include one micro-analogy or relatable example inside the scene.
 
 Return ONLY the narration text:"""
 
@@ -49,11 +57,16 @@ NARRATION_REPAIR_PROMPT = """Your previous narration was MISSING these required 
 SCENE: {title}
 REQUIRED (ALL must appear verbatim): {phrases}
 
-Rewrite the narration (40-65 words) making sure EVERY phrase above appears EXACTLY as written.
+Rewrite the narration ({word_lo}-{word_hi} words) making sure EVERY phrase above appears EXACTLY as written.
 Return ONLY the narration text:"""
 
 
-def write_narration(plan: dict[str, Any]) -> str:
+def write_narration(
+    plan: dict[str, Any],
+    learner_profile: dict[str, Any] | None = None,
+    topic: str = "",
+    subject: str = "Physics",
+) -> str:
     """Generate narration for one scene and validate anchor phrases."""
     scene_id = plan["scene_id"]
     title = plan.get("title", f"Scene {scene_id}")
@@ -61,7 +74,6 @@ def write_narration(plan: dict[str, Any]) -> str:
     learning_goal = plan.get("learning_goal", "")
     events = plan.get("events", [])
     phrases = [ev["anchor_phrase"] for ev in events if ev.get("anchor_phrase", "").strip()]
-    # Deduplicate while preserving order
     seen: set[str] = set()
     unique_phrases: list[str] = []
     for p in phrases:
@@ -69,18 +81,29 @@ def write_narration(plan: dict[str, Any]) -> str:
             seen.add(p.lower())
             unique_phrases.append(p)
 
+    p_norm = normalize_profile(learner_profile, subject)
+    word_lo, word_hi = pace_word_budget(p_norm)
+    learner_context = plan.get("_learner_context") or format_learner_context(
+        learner_profile, topic or title, subject
+    )
+
     if not unique_phrases:
-        # No anchor phrases — generate free narration
         logger.warning("Scene %d has no anchor phrases; generating free narration", scene_id)
-        return _generate_free(title, anchor_example, learning_goal, scene_id)
+        return _generate_free(
+            title, anchor_example, learning_goal, scene_id,
+            learner_context=learner_context, word_lo=word_lo, word_hi=word_hi,
+        )
 
     client = NvidiaClient()
     phrases_display = "\n".join(f'  "{p}"' for p in unique_phrases)
     prompt = NARRATION_PROMPT.format(
+        learner_context=learner_context,
         title=title,
         anchor_example=anchor_example,
         learning_goal=learning_goal,
         phrases=phrases_display,
+        word_lo=word_lo,
+        word_hi=word_hi,
     )
     messages = [
         {"role": "system", "content": NARRATION_SYSTEM},
@@ -102,6 +125,8 @@ def write_narration(plan: dict[str, Any]) -> str:
             missing="\n".join(f'  "{p}"' for p in missing),
             title=title,
             phrases=phrases_display,
+            word_lo=word_lo,
+            word_hi=word_hi,
         )
         messages = [
             {"role": "system", "content": NARRATION_SYSTEM},
@@ -119,10 +144,17 @@ def write_narration(plan: dict[str, Any]) -> str:
     return narration
 
 
-def write_all_narrations(plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def write_all_narrations(
+    plans: list[dict[str, Any]],
+    learner_profile: dict[str, Any] | None = None,
+    topic: str = "",
+    subject: str = "Physics",
+) -> list[dict[str, Any]]:
     """Write narrations for all plans and attach them in-place."""
     for plan in plans:
-        narration = write_narration(plan)
+        narration = write_narration(
+            plan, learner_profile=learner_profile, topic=topic, subject=subject
+        )
         plan["narration"] = narration
         logger.info(
             "Narration for scene %d (%d words): %s…",
@@ -139,12 +171,22 @@ def _find_missing(narration: str, phrases: list[str]) -> list[str]:
     return [p for p in phrases if p.lower() not in lower]
 
 
-def _generate_free(title: str, anchor: str, goal: str, scene_id: int) -> str:
+def _generate_free(
+    title: str,
+    anchor: str,
+    goal: str,
+    scene_id: int,
+    learner_context: str = "",
+    word_lo: int = 40,
+    word_hi: int = 60,
+) -> str:
     """Fallback: generate narration without phrase constraints."""
     client = NvidiaClient()
     prompt = (
-        f"Write a 40-60 word educational narration for: {title}. "
-        f"Anchor example: {anchor}. Goal: {goal}."
+        f"{learner_context}\n\n"
+        f"Write a {word_lo}-{word_hi} word educational narration for: {title}. "
+        f"Anchor example: {anchor}. Goal: {goal}. "
+        "Make it unique to this scene; do not repeat phrasing from other scenes."
     )
     text = client.chat(
         NVIDIA_PLANNER_MODEL,

@@ -1,0 +1,45 @@
+{
+  "scene_id": 4,
+  "objects": [
+    {
+      "id": "title",
+      "type": "Text",
+      "content": "Velocity Types",
+      "action": "Write",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "uniform_velocity_text",
+      "type": "Text",
+      "content": "Uniform",
+      "action": "Create",
+      "beat_index": 1,
+      "weight": 0.3
+    },
+    {
+      "id": "uniform_velocity_graph",
+      "type": "Line",
+      "content": "",
+      "action": "Create",
+      "beat_index": 1,
+      "weight": 0.7
+    },
+    {
+      "id": "non_uniform_velocity_text",
+      "type": "Text",
+      "content": "Non-Uniform",
+      "action": "Create",
+      "beat_index": 2,
+      "weight": 0.3
+    },
+    {
+      "id": "accelerating_object",
+      "type": "Dot",
+      "content": "",
+      "action": "GrowFromCenter",
+      "beat_index": 2,
+      "weight": 0.7
+    }
+  ]
+}

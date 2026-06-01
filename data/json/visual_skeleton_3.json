@@ -1,0 +1,53 @@
+{
+  "scene_id": 3,
+  "objects": [
+    {
+      "id": "title",
+      "type": "Text",
+      "content": "Velocity",
+      "action": "Write",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "formula",
+      "type": "Text",
+      "content": "d/t",
+      "action": "Write",
+      "beat_index": 0,
+      "weight": 0.5
+    },
+    {
+      "id": "distance_line",
+      "type": "Line",
+      "content": "Distance",
+      "action": "Create",
+      "beat_index": 1,
+      "weight": 0.5
+    },
+    {
+      "id": "distance_arrow",
+      "type": "Arrow",
+      "content": "",
+      "action": "GrowFromCenter",
+      "beat_index": 1,
+      "weight": 0.5
+    },
+    {
+      "id": "point_dot",
+      "type": "Dot",
+      "content": "",
+      "action": "Indicate",
+      "beat_index": 2,
+      "weight": 0.5
+    },
+    {
+      "id": "instant_velocity_text",
+      "type": "Text",
+      "content": "Instant Vel",
+      "action": "FadeIn",
+      "beat_index": 2,
+      "weight": 0.5
+    }
+  ]
+}

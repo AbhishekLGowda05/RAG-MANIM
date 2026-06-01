@@ -1,16 +1,16 @@
 import React from 'react';
 
 const STAGES = [
-  { id: 'retrieving', label: 'Topic Retrieval', desc: 'Queries textbook index structure.json and catalog summaries.' },
-  { id: 'explaining', label: 'Educational Structuring', desc: 'Gemini chains construct learning goals, prerequisites, and analogies.' },
-  { id: 'planning', label: 'Visual Scene Planning', desc: 'Formulates animation scene grids, vector shifts, and scale cameras.' },
-  { id: 'generating', label: 'Manim Code Compilation', desc: 'Synthesizes clean Python source and executes Manim subprocess rendering.' },
-  { id: 'narrating', label: 'Narration & Audio Integration', desc: 'Assembles narration clips, Piper TTS synthesis, and final frame sync.' }
+  { id: 'retrieving', label: 'Topic Retrieval', desc: 'Bootstraps the classroom agent and explanation package.' },
+  { id: 'explaining', label: 'Educational Structuring', desc: 'Builds learning objectives, prerequisites, and analogies.' },
+  { id: 'planning', label: 'Visual Scene Planning', desc: 'Storyboard + semantic plans from the concept guide (ideas.md).' },
+  { id: 'generating', label: 'Manim Code Compilation', desc: 'Template or dynamic LLM scenes compiled and rendered.' },
+  { id: 'tts', label: 'Narration & Audio Sync', desc: 'Piper TTS, WhisperX alignment, and FFmpeg merge.' }
 ];
 
 export default function PipelineStatus({ currentStage, message, progress }) {
   const getStageStatus = (stageId) => {
-    const stageOrder = ['idle', 'retrieving', 'explaining', 'planning', 'generating', 'narrating', 'tts', 'complete'];
+    const stageOrder = ['idle', 'retrieving', 'explaining', 'planning', 'generating', 'tts', 'complete'];
     const currentIdx = stageOrder.indexOf(currentStage);
     const targetIdx = stageOrder.indexOf(stageId);
 

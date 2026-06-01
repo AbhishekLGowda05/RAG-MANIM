@@ -55,6 +55,7 @@ from modules.planning.storyboard import build_storyboard
 from modules.planning.semantic_plan import build_all_semantic_plans
 from modules.planning.narration_writer import write_all_narrations
 from modules.planning.asset_registry import reset_registry
+from modules.planning.profile_context import format_learner_context
 from modules.tts.piper_tts import synthesize
 from modules.sync.sync_engine import synchronize_all
 from modules.manim.semantic_compiler import semantic_compile_all
@@ -79,12 +80,25 @@ class PersistRequest(BaseModel):
     filename: str
     payload: Dict[str, Any]
 
+class LearnerProfilePayload(BaseModel):
+    learner_id: str = ""
+    name: str = "Learner"
+    academic_level: str = "class_11"
+    exam_target: List[str] = []
+    learning_style: str = "visual"
+    pace_preference: str = "balanced"
+    weak_subjects: List[str] = []
+    confidence_map: Dict[str, int] = {}
+    subject_for_lesson: str = "Physics"
+    subject_confidence: int = 50
+
 class PipelineRunRequest(BaseModel):
     topic: str
     subject: str
     apiKey: Optional[str] = None
     geminiApiKey: Optional[str] = None
     nvidiaApiKey: Optional[str] = None
+    learnerProfile: Optional[LearnerProfilePayload] = None
 
 # Ensure folders exist
 USER_DATA_DIR = ROOT / "data" / "user"
@@ -140,13 +154,19 @@ async def load_data(filename: str):
             elif filename == "profile.json":
                 return {
                     "learner_id": "default-learner",
-                    "fullname": "Explorer",
-                    "learning_goal": "Master Physics Concept Grounding",
-                    "favourite_subject": "Mechanics",
-                    "difficulty_level": "Standard",
-                    "curriculum_board": "CBSE (Class 10)",
-                    "exam_integration": [],
-                    "weak_adapted_focus": True
+                    "name": "Explorer",
+                    "academic_level": "class_11",
+                    "exam_target": ["JEE"],
+                    "learning_style": "visual",
+                    "pace_preference": "balanced",
+                    "weak_subjects": [],
+                    "confidence_map": {
+                        "Chemistry": 50,
+                        "Physics": 50,
+                        "Mathematics": 50
+                    },
+                    "created_at": "",
+                    "updated_at": ""
                 }
             return {}
         
@@ -157,12 +177,39 @@ async def load_data(filename: str):
         logger.error(f"Error loading {filename}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def run_pipeline_task(session_id: str, topic: str, api_key: str | None, gemini_api_key: str | None = None, nvidia_api_key: str | None = None):
+async def run_pipeline_task(
+    session_id: str,
+    topic: str,
+    api_key: str | None,
+    gemini_api_key: str | None = None,
+    nvidia_api_key: str | None = None,
+    learner_profile: Optional[Dict[str, Any]] = None,
+    subject: str = "Physics",
+):
     job = ACTIVE_JOBS.get(session_id)
     if not job:
         return
-        
+
     queue = job["queue"]
+
+    if learner_profile is None:
+        profile_path = USER_DATA_DIR / "profile.json"
+        if profile_path.exists():
+            try:
+                learner_profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(f"Failed to read learner profile from disk: {e}")
+                learner_profile = None
+
+    if learner_profile:
+        logger.info(
+            "Pipeline personalization: learner=%s level=%s style=%s pace=%s subj_conf=%s",
+            learner_profile.get("learner_id", "?"),
+            learner_profile.get("academic_level", "?"),
+            learner_profile.get("learning_style", "?"),
+            learner_profile.get("pace_preference", "?"),
+            learner_profile.get("subject_confidence", "?"),
+        )
     
     # 1. Update API Keys based on request payload parameters
     g_key = gemini_api_key or api_key
@@ -185,15 +232,22 @@ async def run_pipeline_task(session_id: str, topic: str, api_key: str | None, ge
         # Generate the explanation package using the LLM client
         await queue.put({"stage": "explaining", "progress": 15, "message": "Formulating pedagogical syllabus objectives..."})
         
+        learner_context_block = format_learner_context(learner_profile, topic, subject)
+
         explanation_package = None
         try:
             client = NvidiaClient()
-            prompt = f"Topic: {topic}. Generate a structured educational blueprint with objectives, prerequisites, and real-world analogies."
+            prompt = (
+                f"{learner_context_block}\n\n"
+                f"Topic: {topic}. Generate a structured educational blueprint with "
+                "learning objectives, prerequisites, and 2-3 DIFFERENT real-world analogies "
+                "calibrated to the learner above. Each analogy must be distinct."
+            )
             messages = [
-                {"role": "system", "content": "You are a professional NCERT/CBSE Physics explanation assistant. Respond ONLY with a valid JSON object matching this schema: {\"topic\": \"...\", \"learning_objectives\": [\"...\"], \"core_explanation\": \"...\", \"analogies\": [\"...\"], \"prerequisites\": [\"...\"]}. Do not use markdown blocks or formatting fences."},
+                {"role": "system", "content": "You are a professional NCERT/CBSE explanation assistant. Personalize content to the LEARNER CONTEXT below. Respond ONLY with a valid JSON object matching this schema: {\"topic\": \"...\", \"learning_objectives\": [\"...\"], \"core_explanation\": \"...\", \"analogies\": [\"...\"], \"prerequisites\": [\"...\"]}. Do not use markdown blocks or formatting fences."},
                 {"role": "user", "content": prompt}
             ]
-            raw_expl = client.chat_json(modules.config.NVIDIA_PLANNER_MODEL, messages, temperature=0.3, max_tokens=1024)
+            raw_expl = client.chat_json(modules.config.NVIDIA_PLANNER_MODEL, messages, temperature=0.4, max_tokens=1024)
             if isinstance(raw_expl, dict) and "topic" in raw_expl:
                 explanation_package = raw_expl
         except Exception as e:
@@ -224,9 +278,8 @@ async def run_pipeline_task(session_id: str, topic: str, api_key: str | None, ge
 
         # --- Stage 1: Storyboard ---
         await queue.put({"stage": "planning", "progress": 35, "message": "[1/8] Generating CBSE/NCERT-aligned pedagogical lesson storyboard..."})
-        # Fresh asset registry for this run
         reset_registry()
-        storyboard = build_storyboard(topic)
+        storyboard = build_storyboard(topic, learner_profile=learner_profile, subject=subject)
         
         await queue.put({
             "stage": "planning",
@@ -238,11 +291,15 @@ async def run_pipeline_task(session_id: str, topic: str, api_key: str | None, ge
 
         # --- Stage 2: Semantic plans ---
         await queue.put({"stage": "generating", "progress": 55, "message": "[2/8] Creating visual scene blueprints and vector templates..."})
-        plans = build_all_semantic_plans(storyboard)
-        
+        plans = build_all_semantic_plans(
+            storyboard, learner_profile=learner_profile, topic=topic, subject=subject
+        )
+
         # --- Stage 3: Narration ---
         await queue.put({"stage": "generating", "progress": 65, "message": "[3/8] Writing detailed scene explanations and word cues..."})
-        plans = write_all_narrations(plans)
+        plans = write_all_narrations(
+            plans, learner_profile=learner_profile, topic=topic, subject=subject
+        )
         
         # Concatenate script text for the script inspector
         concatenated_script = ""
@@ -387,28 +444,31 @@ async def run_pipeline_task(session_id: str, topic: str, api_key: str | None, ge
 @app.post("/api/pipeline/run")
 async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTasks):
     session_id = f"session_{int(time.time() * 1000)}"
-    
-    # Store active job
+
+    learner_profile_dict = req.learnerProfile.model_dump() if req.learnerProfile else None
+
     ACTIVE_JOBS[session_id] = {
         "topic": req.topic,
         "subject": req.subject,
         "api_key": req.apiKey,
         "gemini_api_key": req.geminiApiKey,
         "nvidia_api_key": req.nvidiaApiKey,
+        "learner_profile": learner_profile_dict,
         "queue": asyncio.Queue(),
         "status": "queued"
     }
-    
-    # Add pipeline task to background executors
+
     background_tasks.add_task(
-        run_pipeline_task, 
-        session_id, 
-        req.topic, 
-        req.apiKey, 
-        req.geminiApiKey, 
-        req.nvidiaApiKey
+        run_pipeline_task,
+        session_id,
+        req.topic,
+        req.apiKey,
+        req.geminiApiKey,
+        req.nvidiaApiKey,
+        learner_profile_dict,
+        req.subject,
     )
-    
+
     return {"sessionId": session_id, "resolvedTopic": req.topic}
 
 @app.get("/api/pipeline/status/{session_id}")

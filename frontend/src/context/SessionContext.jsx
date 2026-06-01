@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { useProfile } from './ProfileContext';
+import { buildProfileSnapshot } from '../utils/profileSnapshot';
 
 const SessionContext = createContext();
 
@@ -20,6 +22,7 @@ const DEFAULT_SESSION = {
 };
 
 export const SessionProvider = ({ children }) => {
+  const { profile } = useProfile() || {};
   const [session, setSession] = useState(DEFAULT_SESSION);
   const [activeStageMsg, setActiveStageMsg] = useState('');
   const [activeProgress, setActiveProgress] = useState(0);
@@ -152,15 +155,17 @@ Do you want me to derive the mathematical equality or show another visual analog
     try {
       const geminiApiKey = localStorage.getItem('GEMINI_API_KEY') || '';
       const nvidiaApiKey = localStorage.getItem('NVIDIA_API_KEY') || '';
+      const learnerProfile = buildProfileSnapshot(profile, subject);
       const response = await fetch('/api/pipeline/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          topic: query, 
-          subject, 
-          apiKey: geminiApiKey || nvidiaApiKey, 
-          geminiApiKey, 
-          nvidiaApiKey 
+        body: JSON.stringify({
+          topic: query,
+          subject,
+          apiKey: geminiApiKey || nvidiaApiKey,
+          geminiApiKey,
+          nvidiaApiKey,
+          learnerProfile
         })
       });
 
@@ -288,7 +293,7 @@ Do you want me to derive the mathematical equality or show another visual analog
                   prerequisites: []
                 },
                 scene_plan: [
-                  { scene_number: 1, title: 'Introductory Section', description: 'Past animation scene', duration_seconds: hs.duration_seconds }
+                  { scene_number: 1, title: 'Introductory Section', description: 'Past animation scene', duration_seconds: hs.duration || '01:30' }
                 ]
               });
             }
