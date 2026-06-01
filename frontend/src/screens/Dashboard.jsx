@@ -4,6 +4,11 @@ import { useSession } from '../context/SessionContext';
 import MetricCard from '../components/MetricCard';
 import SubjectPill from '../components/SubjectPill';
 import topicCatalog from '../mock/topic_catalog.json';
+import {
+  formatSessionDate,
+  getSessionsThisWeek,
+  computeActiveStreak,
+} from '../utils/sessionHelpers';
 
 export default function Dashboard({ setActiveScreen }) {
   const { profile } = useProfile();
@@ -98,9 +103,9 @@ export default function Dashboard({ setActiveScreen }) {
     : `${totalWatchMin}m`;
 
   const totalQuestions = historyData.sessions?.reduce((acc, curr) => acc + (curr.follow_up_count || 0), 0) || 0;
-  
-  // Calculate streak from daily activity array
-  const activeStreak = analyticsData.daily_activity?.length || 0; 
+  const sessionsThisWeek = getSessionsThisWeek(historyData.sessions);
+  const activeStreak = computeActiveStreak(analyticsData.daily_activity);
+  const weeklyActivity = analyticsData.weekly_contributions || [0, 0, 0, 0, 0, 0, 0];
   const minutesToday = analyticsData.daily_activity?.find(d => d.date === new Date().toISOString().split('T')[0])?.minutes || 0;
   const streakPercent = Math.min((minutesToday / 30) * 100, 100);
 
@@ -116,9 +121,11 @@ export default function Dashboard({ setActiveScreen }) {
             {greeting}, {profile.name || 'Learner'}
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '4px' }}>
-            {historyData.sessions?.length > 0 
-              ? `You have generated ${historyData.sessions.length} custom educational videos this week. Ready to learn more?`
-              : "Welcome to your adaptive workspace. Ask about any high school textbook topic below."
+            {sessionsThisWeek > 0
+              ? `You have generated ${sessionsThisWeek} custom educational video${sessionsThisWeek === 1 ? '' : 's'} this week. Ready to learn more?`
+              : historyData.sessions?.length > 0
+                ? "Welcome back. Pick a topic below or continue a recent lesson."
+                : "Welcome to your adaptive workspace. Ask about any high school textbook topic below."
             }
           </p>
         </div>
@@ -179,7 +186,7 @@ export default function Dashboard({ setActiveScreen }) {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <SubjectPill subject={sessionItem.subject} />
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {new Date(sessionItem.completed_at).toLocaleDateString()}
+                        {formatSessionDate(sessionItem)}
                       </span>
                     </div>
                     <h4 className="serif-title" style={{ fontSize: '18px', fontWeight: '400', lineHeight: '1.3', color: 'var(--text-primary)' }}>
@@ -299,7 +306,7 @@ export default function Dashboard({ setActiveScreen }) {
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', background: 'var(--bg-overlay)', padding: '10px', borderRadius: 'var(--r-md)' }}>
             {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => {
-              const hasActivity = idx < activeStreak;
+              const hasActivity = weeklyActivity[idx] > 0;
               return (
                 <div
                   key={idx}

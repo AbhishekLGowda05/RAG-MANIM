@@ -1,37 +1,20 @@
+"""Manim Scene base classes for chalkboard visuals.
+
+Pipeline templates live in ``modules.templates``; this package only exports
+reusable Scene subclasses used by generated code.
+"""
 from modules.manim.templates.chalkboard_scene import ChalkboardScene
 from modules.manim.templates.concept_card import ConceptCardScene
+from modules.manim.templates.comparison_scene import ComparisonScene
+from modules.manim.templates.equation_scene import EquationScene
+from modules.manim.templates.timeline_scene import TimelineScene
+from modules.manim.templates.diagram_scene import DiagramScene
 
-
-class ChalkboardTemplate:
-    @staticmethod
-    def compile(plan, timeline):
-        return f"""
-from manim import *
-from modules.manim.templates.chalkboard_scene import ChalkboardScene
-
-class GeneratedScene(ChalkboardScene):
-    def construct(self):
-        self.build_anatomy_scene([], [])
-"""
-
-
-class ConceptCardTemplate:
-    @staticmethod
-    def compile(plan, timeline):
-        return f"""
-from manim import *
-from modules.manim.templates.concept_card import ConceptCardScene
-
-class GeneratedScene(ConceptCardScene):
-    def construct(self):
-        self.build_scene(
-            main_title={repr(plan.get("concept","Concept"))},
-            cards=[]
-        )
-"""
-
-
-TEMPLATES = {
-    "chalkboard": ChalkboardTemplate,
-    "concept_card": ConceptCardTemplate,
-}
+__all__ = [
+    "ChalkboardScene",
+    "ConceptCardScene",
+    "ComparisonScene",
+    "EquationScene",
+    "TimelineScene",
+    "DiagramScene",
+]

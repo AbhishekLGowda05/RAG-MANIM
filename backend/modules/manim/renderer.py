@@ -6,13 +6,18 @@ import re
 import subprocess
 from pathlib import Path
 
+import os
+
 from modules.config import (
     MANIM_MAX_RETRIES,
     MANIM_QUALITY,
+    MANIM_REPAIR_TIMEOUT,
     NVIDIA_REPAIR_MODEL,
     PATHS,
     get_logger,
 )
+
+_VENV_MANIM = PATHS["root"].parent.parent / "venv" / "bin" / "manim"
 from modules.llm.nvidia_client import NvidiaClient
 
 logger = get_logger(__name__)
@@ -59,7 +64,16 @@ def render(
         logger.warning("Render attempt %d failed: %s", attempt + 1, error[:200])
 
         if attempt < MANIM_MAX_RETRIES - 1:
-            repaired = _try_repair(scene_py, error)
+            # Known template bugs: skip slow LLM repair and use deterministic fallback
+            skip_llm = _should_skip_llm_repair(error)
+            repaired = False
+            if not skip_llm and _has_repair_api_key():
+                repaired = _try_repair(scene_py, error)
+            elif skip_llm:
+                logger.warning(
+                    "Skipping LLM repair for known error pattern; using template fallback for %s",
+                    scene_py.name,
+                )
             if not repaired and fallback_code:
                 logger.warning(
                     "Repair unavailable; writing template fallback to %s",
@@ -92,8 +106,9 @@ _last_error: str = ""
 def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None:
     """Execute manim CLI and locate output MP4."""
     global _last_error
+    manim_bin = str(_VENV_MANIM) if _VENV_MANIM.exists() else "manim"
     cmd = [
-        "manim",
+        manim_bin,
         "render",
         MANIM_QUALITY,
         str(scene_py),
@@ -103,13 +118,17 @@ def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None
         "--disable_caching",
     ]
     logger.info("Running: %s", " ".join(cmd))
+    env = os.environ.copy()
+    backend_root = str(PATHS["root"])
+    env["PYTHONPATH"] = backend_root + os.pathsep + env.get("PYTHONPATH", "")
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=300,
-            cwd=str(PATHS["root"]),
+            cwd=backend_root,
+            env=env,
         )
         if result.returncode != 0:
             _last_error = result.stderr or result.stdout
@@ -132,9 +151,19 @@ def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None
         return None
 
 
+def _has_repair_api_key() -> bool:
+    return bool(os.getenv("NVIDIA_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+
+
+def _should_skip_llm_repair(error: str) -> bool:
+    """Skip LLM repair for errors we can fix deterministically via template recompile."""
+    markers = ("ArrowTip", "NotImplementedError", "get_edge", "ApplyMethod")
+    return any(m in error for m in markers)
+
+
 def _try_repair(scene_py: Path, error: str) -> bool:
     """Send failed code to NVIDIA NIM for repair. Returns True on success."""
-    logger.info("Requesting NVIDIA repair for %s", scene_py.name)
+    logger.info("Requesting LLM repair for %s (timeout=%ds)", scene_py.name, MANIM_REPAIR_TIMEOUT)
     code = scene_py.read_text(encoding="utf-8")
     try:
         client = NvidiaClient()
@@ -146,7 +175,11 @@ def _try_repair(scene_py: Path, error: str) -> bool:
             },
         ]
         fixed = client.chat(
-            NVIDIA_REPAIR_MODEL, messages, temperature=0.1, max_tokens=8192
+            NVIDIA_REPAIR_MODEL,
+            messages,
+            temperature=0.1,
+            max_tokens=8192,
+            timeout=MANIM_REPAIR_TIMEOUT,
         )
     except Exception as exc:
         logger.warning("Repair LLM call failed: %s", exc)

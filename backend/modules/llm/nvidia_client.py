@@ -38,6 +38,7 @@ class NvidiaClient:
         messages: list[dict[str, str]],
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        timeout: int = 300,
     ) -> str:
         """Send a chat completion request to NVIDIA NIM, falling back to Gemini if needed."""
         self.nvidia_api_key = os.getenv("NVIDIA_API_KEY") or self.nvidia_api_key
@@ -64,7 +65,7 @@ class NvidiaClient:
                     NIM_BASE_URL,
                     headers=headers,
                     json=payload,
-                    timeout=300,
+                    timeout=timeout,
                 )
                 response.raise_for_status()
                 data = response.json()

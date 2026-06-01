@@ -21,6 +21,8 @@ from modules.llm.nvidia_client import NvidiaClient
 from modules.planning.asset_registry import get_registry
 from modules.planning.profile_context import format_learner_context
 from modules.templates import TEMPLATES
+from modules.templates.explain import EXPLAIN_TEMPLATE_IDS
+from modules.templates.explain._base import merge_content
 
 logger = get_logger(__name__)
 
@@ -28,6 +30,49 @@ SEMANTIC_PLAN_SYSTEM = """You are an educational animation director.
 You assign physics assets and event sequences to scenes.
 NEVER include run_time, duration, seconds, or timing fields.
 Respond ONLY with valid JSON. No markdown fences."""
+
+SEMANTIC_PLAN_EXPLAIN_PROMPT = """Fill the semantic plan for this CHALKBOARD EXPLANATION scene.
+
+{learner_context}
+
+STORYBOARD ENTRY:
+{storyboard_entry}
+
+TEMPLATE: {template_id}
+TEMPLATE ALLOWED EVENTS: {allowed_events}
+
+CONTENT SCHEMA (fill the "content" object exactly in this shape):
+{content_schema}
+
+For "equation" fields use simple LaTeX with DOUBLE backslashes in JSON (e.g. "W = F \\\\cdot d").
+
+RULES:
+1. Return a "content" object matching CONTENT SCHEMA — all strings must be specific to this
+   topic and anchor_example (not generic placeholders).
+2. "assets" must be an empty array [].
+3. Provide 2-4 "events" using only ALLOWED EVENTS; each needs an anchor_phrase (3-7 words)
+   that will appear VERBATIM in the narration later.
+4. "phase" is "before", "on", or "after"; "importance" is 1-5.
+
+Return ONLY this JSON shape:
+{{
+  "scene_id": {scene_id},
+  "concept_template": "{template_id}",
+  "title": "<short scene title>",
+  "anchor_example": "{anchor_example}",
+  "content": <object matching CONTENT SCHEMA>,
+  "assets": [],
+  "events": [
+    {{
+      "id": "e0",
+      "type": "<from ALLOWED EVENTS>",
+      "targets": [],
+      "anchor_phrase": "<3-7 verbatim words for narration>",
+      "phase": "on",
+      "importance": 3
+    }}
+  ]
+}}"""
 
 SEMANTIC_PLAN_PROMPT = """Fill the semantic plan for this scene.
 
@@ -99,23 +144,48 @@ def build_semantic_plan(
     learner_context = format_learner_context(
         learner_profile, topic or storyboard_entry.get("title", ""), subject
     )
+    content_schema = getattr(template_cls, "CONTENT_SCHEMA", None)
+    is_explain = template_id in EXPLAIN_TEMPLATE_IDS
 
     client = NvidiaClient()
-    prompt = SEMANTIC_PLAN_PROMPT.format(
-        storyboard_entry=json.dumps(storyboard_entry, indent=2),
-        template_id=template_id,
-        allowed_events=", ".join(allowed_events),
-        asset_ids=", ".join(asset_ids),
-        scene_id=scene_id,
-        anchor_example=anchor_example,
-        learner_context=learner_context,
-    )
+    if is_explain and content_schema:
+        prompt = SEMANTIC_PLAN_EXPLAIN_PROMPT.format(
+            storyboard_entry=json.dumps(storyboard_entry, indent=2),
+            template_id=template_id,
+            allowed_events=", ".join(allowed_events),
+            content_schema=content_schema,
+            scene_id=scene_id,
+            anchor_example=anchor_example,
+            learner_context=learner_context,
+        )
+    else:
+        prompt = SEMANTIC_PLAN_PROMPT.format(
+            storyboard_entry=json.dumps(storyboard_entry, indent=2),
+            template_id=template_id,
+            allowed_events=", ".join(allowed_events),
+            asset_ids=", ".join(asset_ids),
+            scene_id=scene_id,
+            anchor_example=anchor_example,
+            learner_context=learner_context,
+        )
     messages = [
         {"role": "system", "content": SEMANTIC_PLAN_SYSTEM},
         {"role": "user", "content": prompt},
     ]
-    raw = client.chat_json(NVIDIA_PLANNER_MODEL, messages, temperature=0.3, max_tokens=4096)
-    plan = _validate_plan(raw, scene_id, template_id, allowed_events)
+    try:
+        raw = client.chat_json(NVIDIA_PLANNER_MODEL, messages, temperature=0.3, max_tokens=4096)
+    except (json.JSONDecodeError, ValueError) as exc:
+        if is_explain:
+            logger.warning(
+                "Scene %d explain plan JSON failed (%s); using fallback content",
+                scene_id, exc,
+            )
+            raw = _fallback_explain_raw(storyboard_entry, template_id, scene_id)
+        else:
+            raise
+    plan = _validate_plan(
+        raw, scene_id, template_id, allowed_events, storyboard_entry=storyboard_entry
+    )
 
     for field in ("subtitle", "key_term", "summary_points", "learning_goal"):
         if field in storyboard_entry and field not in plan:
@@ -155,6 +225,55 @@ def build_all_semantic_plans(
 
 
 # ---------------------------------------------------------------------------
+# Fallbacks
+# ---------------------------------------------------------------------------
+
+
+def _fallback_explain_raw(
+    storyboard_entry: dict[str, Any],
+    template_id: str,
+    scene_id: int,
+) -> dict[str, Any]:
+    """Deterministic plan when LLM JSON is invalid (e.g. LaTeX backslashes)."""
+    base = {
+        "scene_id": scene_id,
+        "concept_template": template_id,
+        "title": storyboard_entry.get("title", f"Scene {scene_id}"),
+        "anchor_example": storyboard_entry.get("anchor_example", ""),
+        "learning_goal": storyboard_entry.get("learning_goal", ""),
+        "assets": [],
+        "content": merge_content(storyboard_entry, template_id),
+        "events": [
+            {
+                "id": "e0",
+                "type": "place_title",
+                "targets": [],
+                "anchor_phrase": "let us begin",
+                "phase": "on",
+                "importance": 3,
+            },
+            {
+                "id": "e1",
+                "type": "reveal",
+                "targets": [],
+                "anchor_phrase": "the key idea",
+                "phase": "on",
+                "importance": 4,
+            },
+            {
+                "id": "e2",
+                "type": "hold",
+                "targets": [],
+                "anchor_phrase": "in summary",
+                "phase": "on",
+                "importance": 2,
+            },
+        ],
+    }
+    return base
+
+
+# ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
 
@@ -164,6 +283,7 @@ def _validate_plan(
     scene_id: int,
     template_id: str,
     allowed_events: list[str],
+    storyboard_entry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f"Semantic plan must be a dict, got {type(raw)}")
@@ -226,5 +346,17 @@ def _validate_plan(
     # Ensure title
     if "title" not in plan or not plan["title"]:
         plan["title"] = str(raw.get("anchor_example", f"Scene {scene_id}"))
+
+    if template_id in EXPLAIN_TEMPLATE_IDS:
+        plan["assets"] = []
+        base_entry = dict(storyboard_entry or {})
+        base_entry.update({
+            "title": plan.get("title", base_entry.get("title", "")),
+            "learning_goal": plan.get("learning_goal", base_entry.get("learning_goal", "")),
+            "anchor_example": plan.get("anchor_example", base_entry.get("anchor_example", "")),
+        })
+        if isinstance(plan.get("content"), dict):
+            base_entry["content"] = plan["content"]
+        plan["content"] = merge_content(base_entry, template_id)
 
     return plan

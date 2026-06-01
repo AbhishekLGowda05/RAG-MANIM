@@ -89,6 +89,34 @@ export const SessionProvider = ({ children }) => {
     });
   };
 
+  const incrementFollowUpCount = async (sessionId) => {
+    if (!sessionId) return;
+    try {
+      const response = await fetch('/api/load/history.json');
+      if (!response.ok) return;
+      const historyData = await response.json();
+      const sessions = historyData.sessions || [];
+      const idx = sessions.findIndex((s) => s.session_id === sessionId);
+      if (idx === -1) return;
+
+      sessions[idx] = {
+        ...sessions[idx],
+        follow_up_count: (sessions[idx].follow_up_count || 0) + 1,
+      };
+
+      await fetch('/api/persist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: 'history.json',
+          payload: { sessions },
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to update follow-up count:', err);
+    }
+  };
+
   const addChatMessage = async (role, content) => {
     if (!session.session_id) return;
 
@@ -108,6 +136,10 @@ export const SessionProvider = ({ children }) => {
           payload: updatedSession
         })
       });
+
+      if (role === 'user') {
+        await incrementFollowUpCount(session.session_id);
+      }
 
       // Simple mock AI reply to build a fluid conversational chat
       if (role === 'user') {

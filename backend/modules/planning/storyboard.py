@@ -17,7 +17,11 @@ from typing import Any
 from modules.config import NVIDIA_PLANNER_MODEL, PATHS, get_logger
 from modules.llm.nvidia_client import NvidiaClient
 from modules.planning.profile_context import format_learner_context
-from modules.templates import VALID_TEMPLATE_IDS
+from modules.templates import (
+    EXPLAIN_TEMPLATE_IDS,
+    MECHANICS_TEMPLATE_IDS,
+    VALID_TEMPLATE_IDS,
+)
 
 logger = get_logger(__name__)
 
@@ -30,17 +34,36 @@ STORYBOARD_PROMPT = """Design a 5-scene educational video arc for this topic: {t
 
 {learner_context}
 
-TEMPLATE OPTIONS (choose the most appropriate for each scene):
-{template_list}
+TEMPLATE FAMILIES — pick the best family per scene:
 
-If NO template above visually fits the topic for a given scene, use "freeform" and the LLM
-will author a custom Manim scene from the scene plan.
+A) PHYSICS SIMULATION (animated motion on chalkboard) — use when the scene shows a physical
+   process, forces, or motion that is best taught with moving objects:
+   {mechanics_list}
+
+B) CHALKBOARD EXPLANATION (conceptual layouts, no physics assets) — use when the scene is
+   about ideas, definitions, formulas, comparisons, or structure:
+   - concept_card: break a concept into 2-4 labeled parts/cards
+   - comparison: contrast two ideas side-by-side (e.g. scalar vs vector, static vs kinetic)
+   - equation: present or derive a key formula with a short explanation
+   - timeline: ordered steps, history, or procedure (3-5 labels on a timeline)
+   - diagram: relationships between parts (nodes in a flow or system)
+
+C) FALLBACK: freeform — only if neither family fits.
+
+Also available: intro (scene 1 only), summary (scene 5 only).
+
+SELECTION GUIDANCE:
+- Mix BOTH families across scenes 2-4 when the topic benefits (e.g. one simulation scene +
+  one equation or concept_card scene).
+- Prefer simulation templates when motion/forces are central; prefer explanation templates
+  for definitions, formulas, contrasts, and step-by-step reasoning.
+- If NO template fits a scene, use "freeform".
 
 REQUIREMENTS:
 - Scene 1: always use "intro" template
 - Scene 5: always use "summary" template
-- Scenes 2-4: choose the template that best matches each scene's idea — prefer topic-specific
-  templates ({template_ids}) when the topic aligns; otherwise pick "freeform".
+- Scenes 2-4: choose the template that best matches each scene's idea from families A or B,
+  or freeform as last resort.
 - Scenes 2, 3, and 4 MUST have THREE DIFFERENT concept_templates AND THREE DIFFERENT
   anchor_examples. Do NOT reuse the same anchor across scenes. Each scene teaches a
   DIFFERENT facet (definition, mechanism, edge case, real-world application, etc.).
@@ -104,15 +127,20 @@ def build_storyboard(
     logger.info("Building storyboard for topic: %s", topic)
     client = NvidiaClient()
 
-    template_list = "\n".join(f"  - {t}" for t in VALID_TEMPLATE_IDS)
+    mechanics_middle = [
+        t for t in MECHANICS_TEMPLATE_IDS if t not in ("intro", "summary")
+    ]
+    mechanics_list = "\n".join(f"   - {t}" for t in mechanics_middle)
+    explain_list = "\n".join(f"   - {t}" for t in EXPLAIN_TEMPLATE_IDS)
     template_ids = ", ".join(
-        t for t in VALID_TEMPLATE_IDS if t not in ("intro", "summary")
+        mechanics_middle + EXPLAIN_TEMPLATE_IDS + ["freeform"]
     )
     learner_context = format_learner_context(learner_profile, topic, subject)
     prompt = STORYBOARD_PROMPT.format(
         topic=topic,
         learner_context=learner_context,
-        template_list=template_list,
+        mechanics_list=mechanics_list,
+        explain_list=explain_list,
         template_ids=template_ids,
     )
     messages = [

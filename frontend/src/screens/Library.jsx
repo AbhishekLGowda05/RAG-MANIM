@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import SubjectPill from '../components/SubjectPill';
 import { useSession } from '../context/SessionContext';
+import { getSessionDate, formatSessionDate } from '../utils/sessionHelpers';
 
 export default function Library({ setActiveScreen }) {
   const { loadSessionById } = useSession();
@@ -46,9 +47,9 @@ export default function Library({ setActiveScreen }) {
 
     // Sort
     if (sortBy === 'newest') {
-      result.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
+      result.sort((a, b) => new Date(getSessionDate(b)) - new Date(getSessionDate(a)));
     } else if (sortBy === 'oldest') {
-      result.sort((a, b) => new Date(a.completed_at) - new Date(b.completed_at));
+      result.sort((a, b) => new Date(getSessionDate(a)) - new Date(getSessionDate(b)));
     } else if (sortBy === 'duration') {
       result.sort((a, b) => (b.duration_seconds || 0) - (a.duration_seconds || 0));
     }
@@ -235,7 +236,7 @@ export default function Library({ setActiveScreen }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <SubjectPill subject={sessionItem.subject} />
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {new Date(sessionItem.completed_at).toLocaleDateString()}
+                      {formatSessionDate(sessionItem)}
                     </span>
                   </div>
                   

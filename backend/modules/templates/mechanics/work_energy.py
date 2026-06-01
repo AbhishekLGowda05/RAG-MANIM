@@ -103,18 +103,16 @@ class WorkEnergyTemplate:
             f'        force_grp = VGroup(force_arrow, force_lbl)',
             f'        force_grp.set_opacity(0)',
             "",
-            # Displacement arrow (dashed, below object)
-            f'        disp_arrow = DashedLine(',
+            # Displacement arrow (below object) — use Arrow, not ArrowTip (abstract in Manim CE)
+            f'        disp_arrow = Arrow(',
             f'            np.array([{obj_start_x:.2f}, {surf_y + 0.1:.2f}, 0]),',
             f'            np.array([{obj_start_x + push_dist:.2f}, {surf_y + 0.1:.2f}, 0]),',
-            f'            color="{DISPLACEMENT_COLOR}", stroke_width=2.5',
+            f'            color="{DISPLACEMENT_COLOR}", stroke_width=3, buff=0,',
+            f'            max_tip_length_to_length_ratio=0.12',
             f'        )',
-            f'        disp_tip = ArrowTip(color="{DISPLACEMENT_COLOR}")',
-            f'        disp_tip.scale(0.5)',
-            f'        disp_tip.move_to(np.array([{obj_start_x + push_dist:.2f}, {surf_y + 0.1:.2f}, 0]))',
             f'        disp_lbl = Text("d", font_size=20, color="{DISPLACEMENT_COLOR}", slant=ITALIC)',
             f'        disp_lbl.move_to(np.array([{obj_start_x + push_dist/2:.2f}, {surf_y - 0.28:.2f}, 0]))',
-            f'        disp_grp = VGroup(disp_arrow, disp_tip, disp_lbl)',
+            f'        disp_grp = VGroup(disp_arrow, disp_lbl)',
             f'        disp_grp.set_opacity(0)',
             "",
             # KE energy bar (right side, vertical)
@@ -169,7 +167,7 @@ class WorkEnergyTemplate:
         # Displacement indicator
         lines += [
             f'        disp_grp.set_opacity(1)',
-            f'        self.play(Create(disp_arrow), FadeIn(disp_tip, disp_lbl), run_time={rt_disp:.3f})',
+            f'        self.play(GrowArrow(disp_arrow), FadeIn(disp_lbl), run_time={rt_disp:.3f})',
         ]
         elapsed += rt_disp
         if hold_disp > 0.05:

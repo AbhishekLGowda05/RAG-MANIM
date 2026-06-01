@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import json
 import logging
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -106,6 +107,139 @@ USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR = ROOT / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+DEFAULT_ANALYTICS = {
+    "total_sessions": 0,
+    "total_watch_time_seconds": 0,
+    "topics_covered": [],
+    "weak_topic_flags": [],
+    "daily_activity": [],
+    "subject_distribution": {},
+    "weekly_contributions": [0, 0, 0, 0, 0, 0, 0],
+    "strength_matrix": {
+        "Mechanics": 50,
+        "Electromagnetism": 50,
+        "Thermodynamics": 50,
+        "Optics": 50,
+        "Modern Physics": 50,
+    },
+}
+
+DEFAULT_SESSION_DURATION_SECONDS = 90
+
+
+def _parse_duration_seconds(duration: str | int | float | None) -> int:
+    if isinstance(duration, (int, float)):
+        return int(duration)
+    if not duration:
+        return DEFAULT_SESSION_DURATION_SECONDS
+    try:
+        parts = str(duration).split(":")
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    except (ValueError, TypeError):
+        pass
+    return DEFAULT_SESSION_DURATION_SECONDS
+
+
+def _session_date_str(session: Dict[str, Any]) -> str:
+    completed = session.get("completed_at") or session.get("date") or ""
+    return str(completed)[:10]
+
+
+def _weekday_index(date_str: str) -> int | None:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return (dt.weekday() + 1) % 7
+    except ValueError:
+        return None
+
+
+def _load_user_json(filename: str, default: Dict[str, Any]) -> Dict[str, Any]:
+    file_path = USER_DATA_DIR / filename
+    if not file_path.exists():
+        return dict(default)
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return dict(default)
+
+
+def _save_user_json(filename: str, payload: Dict[str, Any]) -> None:
+    file_path = USER_DATA_DIR / filename
+    temp_path = file_path.with_suffix(".tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    if file_path.exists():
+        file_path.unlink()
+    temp_path.rename(file_path)
+
+
+def _normalize_history_session(session: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(session)
+    date_str = _session_date_str(normalized)
+    if date_str and not normalized.get("completed_at"):
+        normalized["completed_at"] = f"{date_str}T12:00:00"
+    if date_str and not normalized.get("date"):
+        normalized["date"] = date_str
+    if "duration_seconds" not in normalized:
+        normalized["duration_seconds"] = _parse_duration_seconds(normalized.get("duration"))
+    if "follow_up_count" not in normalized:
+        normalized["follow_up_count"] = 0
+    return normalized
+
+
+def _build_analytics_from_history(history_data: Dict[str, Any]) -> Dict[str, Any]:
+    analytics = dict(DEFAULT_ANALYTICS)
+    sessions = [
+        _normalize_history_session(s)
+        for s in history_data.get("sessions", [])
+    ]
+    daily_map: Dict[str, int] = {}
+
+    for session in sessions:
+        duration_sec = session.get("duration_seconds", DEFAULT_SESSION_DURATION_SECONDS)
+        analytics["total_watch_time_seconds"] += duration_sec
+
+        topic = (session.get("topic") or "").strip()
+        if topic and topic not in analytics["topics_covered"]:
+            analytics["topics_covered"].append(topic)
+
+        subject = session.get("subject") or "Physics"
+        analytics["subject_distribution"][subject] = (
+            analytics["subject_distribution"].get(subject, 0) + 1
+        )
+
+        date_str = _session_date_str(session)
+        if date_str:
+            daily_map[date_str] = daily_map.get(date_str, 0) + max(1, duration_sec // 60)
+            weekday_idx = _weekday_index(date_str)
+            if weekday_idx is not None:
+                analytics["weekly_contributions"][weekday_idx] += 1
+
+    analytics["total_sessions"] = len(sessions)
+    analytics["daily_activity"] = [
+        {"date": date_key, "minutes": minutes}
+        for date_key, minutes in sorted(daily_map.items())
+    ]
+    return analytics
+
+
+def _sync_analytics_from_history() -> Dict[str, Any]:
+    history_data = _load_user_json("history.json", {"sessions": []})
+    normalized_sessions = [
+        _normalize_history_session(s) for s in history_data.get("sessions", [])
+    ]
+    if normalized_sessions != history_data.get("sessions", []):
+        history_data["sessions"] = normalized_sessions
+        _save_user_json("history.json", history_data)
+
+    analytics = _build_analytics_from_history(history_data)
+    _save_user_json("analytics.json", analytics)
+    return analytics
+
 @app.post("/api/persist")
 async def persist_data(req: PersistRequest):
     try:
@@ -137,20 +271,10 @@ async def load_data(filename: str):
             if filename == "history.json":
                 return {"sessions": []}
             elif filename == "analytics.json":
-                return {
-                    "total_sessions": 0,
-                    "total_watch_time_seconds": 0,
-                    "topics_covered": [],
-                    "weak_topic_flags": [],
-                    "weekly_contributions": [0, 0, 0, 0, 0, 0, 0],
-                    "strength_matrix": {
-                        "Mechanics": 50,
-                        "Electromagnetism": 50,
-                        "Thermodynamics": 50,
-                        "Optics": 50,
-                        "Modern Physics": 50
-                    }
-                }
+                history_data = _load_user_json("history.json", {"sessions": []})
+                if history_data.get("sessions"):
+                    return _sync_analytics_from_history()
+                return dict(DEFAULT_ANALYTICS)
             elif filename == "profile.json":
                 return {
                     "learner_id": "default-learner",
@@ -172,6 +296,20 @@ async def load_data(filename: str):
         
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        if filename == "analytics.json":
+            history_data = _load_user_json("history.json", {"sessions": []})
+            history_count = len(history_data.get("sessions", []))
+            if history_count and (data.get("total_sessions", 0) < history_count):
+                return _sync_analytics_from_history()
+
+        if filename == "history.json":
+            sessions = data.get("sessions", [])
+            normalized = [_normalize_history_session(s) for s in sessions]
+            if normalized != sessions:
+                data["sessions"] = normalized
+                _save_user_json("history.json", data)
+
         return data
     except Exception as e:
         logger.error(f"Error loading {filename}: {e}")
@@ -411,18 +549,27 @@ async def run_pipeline_task(
             except Exception:
                 pass
                 
-        # Append new session details
+        completed_at = datetime.now().isoformat()
+        session_date = completed_at[:10]
+        duration_seconds = DEFAULT_SESSION_DURATION_SECONDS
+        session_subject = job.get("subject", "Physics")
+
         history_data["sessions"].insert(0, {
             "session_id": session_id,
             "topic": topic,
             "duration": "01:30",
-            "date": time.strftime("%Y-%m-%d"),
+            "duration_seconds": duration_seconds,
+            "date": session_date,
+            "completed_at": completed_at,
             "video_path": video_url,
-            "subject": job.get("subject", "Physics")
+            "subject": session_subject,
+            "follow_up_count": 0,
         })
-        
+
         with open(history_file_path, "w", encoding="utf-8") as f:
             json.dump(history_data, f, ensure_ascii=False, indent=2)
+
+        _sync_analytics_from_history()
 
         # Finish!
         await queue.put({

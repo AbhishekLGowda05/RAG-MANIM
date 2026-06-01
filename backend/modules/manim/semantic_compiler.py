@@ -94,6 +94,26 @@ def _post_process(code: str, scene_id: int) -> str:
         logger.error("Scene %d: compiled code missing GeneratedScene class!", scene_id)
 
     _warn_primitives(code, scene_id)
+    code = _sanitize_manim_antipatterns(code, scene_id)
+    return code
+
+
+def _sanitize_manim_antipatterns(code: str, scene_id: int) -> str:
+    """Fix known Manim CE incompatibilities in generated scene code."""
+    if "ArrowTip(" in code:
+        logger.warning(
+            "Scene %d: removing invalid ArrowTip() calls (use Arrow or Arc.add_tip instead)",
+            scene_id,
+        )
+        # Drop standalone ArrowTip construction lines; paired animations must not reference them
+        lines_out: list[str] = []
+        for line in code.splitlines():
+            if "ArrowTip(" in line and "=" in line:
+                continue
+            line = line.replace("disp_tip, ", "").replace(", disp_tip", "")
+            line = line.replace("torque_arc_tip, ", "").replace(", torque_arc_tip", "")
+            lines_out.append(line)
+        code = "\n".join(lines_out)
     return code
 
 

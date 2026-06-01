@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from modules.config import (
+    USE_WHISPERX,
     WHISPERX_COMPUTE_TYPE,
     WHISPERX_DEVICE,
     WHISPERX_MODEL,
@@ -22,13 +23,23 @@ def _check_whisperx() -> bool:
     global _whisperx_available
     if _whisperx_available is not None:
         return _whisperx_available
+    if not USE_WHISPERX:
+        _whisperx_available = False
+        logger.info("WhisperX disabled (USE_WHISPERX=false); using uniform alignment")
+        return False
     try:
         import whisperx  # noqa: F401
 
         _whisperx_available = True
-    except ImportError:
+    except Exception as exc:
+        # Catch ALL import-time failures (ImportError, RuntimeError from torch/numpy
+        # ABI mismatches, SystemExit from broken transformers, etc.). The pipeline
+        # must never crash here — uniform alignment is a perfectly valid fallback.
         _whisperx_available = False
-        logger.warning("WhisperX not available; will use uniform alignment fallback")
+        logger.warning(
+            "WhisperX unavailable (%s: %s); using uniform alignment fallback",
+            type(exc).__name__, exc,
+        )
     return _whisperx_available
 
 

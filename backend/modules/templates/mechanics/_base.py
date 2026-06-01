@@ -6,6 +6,12 @@ from typing import Any
 _HEADER = """\
 from manim import *
 import numpy as np
+import sys
+from pathlib import Path
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 from modules.manim.templates.chalkboard_scene import ChalkboardScene
 

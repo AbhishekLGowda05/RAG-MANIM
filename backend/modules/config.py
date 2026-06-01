@@ -31,9 +31,11 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 PIPER_MODEL = os.getenv("PIPER_MODEL", "en_US-lessac-medium")
+USE_WHISPERX = os.getenv("USE_WHISPERX", "false").lower() in ("1", "true", "yes")
 WHISPERX_MODEL = os.getenv("WHISPERX_MODEL", "base")
 WHISPERX_DEVICE = os.getenv("WHISPERX_DEVICE", "cpu")
 WHISPERX_COMPUTE_TYPE = os.getenv("WHISPERX_COMPUTE_TYPE", "int8")
+MANIM_REPAIR_TIMEOUT = int(os.getenv("MANIM_REPAIR_TIMEOUT", "45"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 NVIDIA_PLANNER_MODEL = os.getenv("NVIDIA_PLANNER_MODEL", "meta/llama-3.3-70b-instruct")
