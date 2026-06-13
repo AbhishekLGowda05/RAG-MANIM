@@ -32,6 +32,19 @@ Respond ONLY with a valid JSON array. No markdown fences, no commentary."""
 
 STORYBOARD_PROMPT = """Design a 5-scene educational video arc for this topic: {topic}
 
+CURRICULUM CONTEXT:
+{curriculum_context}
+
+
+IMPORTANT:
+
+- Use the curriculum context as the PRIMARY source of truth.
+
+- Base scene titles, examples, explanations, formulas, and learning goals on the curriculum context whenever possible.
+
+- Do not invent concepts that are not supported by the curriculum context.
+
+- If the curriculum context is empty, fall back to general educational knowledge.
 {learner_context}
 
 TEMPLATE FAMILIES — pick the best family per scene:
@@ -120,6 +133,7 @@ Return ONLY the JSON array."""
 
 def build_storyboard(
     topic: str,
+    curriculum_context: str = "",
     learner_profile: dict[str, Any] | None = None,
     subject: str = "Physics",
 ) -> list[dict[str, Any]]:
@@ -138,6 +152,7 @@ def build_storyboard(
     learner_context = format_learner_context(learner_profile, topic, subject)
     prompt = STORYBOARD_PROMPT.format(
         topic=topic,
+        curriculum_context=curriculum_context,
         learner_context=learner_context,
         mechanics_list=mechanics_list,
         explain_list=explain_list,

@@ -57,6 +57,9 @@ from modules.planning.semantic_plan import build_all_semantic_plans
 from modules.planning.narration_writer import write_all_narrations
 from modules.planning.asset_registry import reset_registry
 from modules.planning.profile_context import format_learner_context
+
+from modules.retrieval.pageindex_retriever import retrieve_curriculum_context
+
 from modules.tts.piper_tts import synthesize
 from modules.sync.sync_engine import synchronize_all
 from modules.manim.semantic_compiler import semantic_compile_all
@@ -414,10 +417,23 @@ async def run_pipeline_task(
         })
         await asyncio.sleep(0.5)
 
-        # --- Stage 1: Storyboard ---
-        await queue.put({"stage": "planning", "progress": 35, "message": "[1/8] Generating CBSE/NCERT-aligned pedagogical lesson storyboard..."})
+        # --- Stage 1: Retrieve curriculum context ---
+        curriculum_context = retrieve_curriculum_context(topic)
+        logger.info("Retrieved curriculum context length=%s", len(curriculum_context))
+
+        # --- Stage 2: Storyboard ---
+        await queue.put({
+            "stage": "planning",
+            "progress": 35,
+            "message": "[1/8] Generating CBSE/NCERT-aligned pedagogical lesson storyboard..."
+        })
         reset_registry()
-        storyboard = build_storyboard(topic, learner_profile=learner_profile, subject=subject)
+        storyboard = build_storyboard(
+            topic=topic,
+            curriculum_context=curriculum_context,
+            learner_profile=learner_profile,
+            subject=subject
+        )
         
         await queue.put({
             "stage": "planning",

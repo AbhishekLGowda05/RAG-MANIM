@@ -10,6 +10,8 @@ fastapi
 uvicorn
 gtts
 piper-tts
+pymupdf
+PyPDF2
 # NOTE: Manim 0.19+ requires numpy>=2, but the installed PyTorch 2.2.x wheels
 # were built against numpy 1.x and crash on import. We resolve this by NOT
 # importing WhisperX/torch at all — the audio alignment module falls back to
