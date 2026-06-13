@@ -57,7 +57,12 @@ from .utils import (
     PROMPT_OVERHEAD_TOKENS,
 )
 from .deterministic_toc import parse_toc as deterministic_parse_toc, find_toc_page_index
-from .hierarchy_repair import repair_hierarchy, semantic_boundary_refiner, map_toc_pages_to_physical
+from .hierarchy_repair import (
+    repair_hierarchy,
+    semantic_boundary_refiner,
+    map_toc_pages_to_physical,
+    inject_subsections_into_tree,
+)
 from .validators import validate_semantic_tree
 from .telemetry import PipelineMetrics
 from .local_llm import (
@@ -221,6 +226,17 @@ def process_toc_from_entries(detection: TOCDetectionResult, toc_page_list: list,
 
 # ── No-TOC path (unchanged, single SLM call) ─────────────────────────────────
 
+_GARBLED_RE = re.compile(r"/G\d{2,3}")
+
+
+def _is_garbled_ocr(text: str) -> bool:
+    """Return True if the text looks like PDF glyph-code garbage (/G65 sequences)."""
+    if not text:
+        return False
+    hits = len(_GARBLED_RE.findall(text))
+    return hits > 10 and (hits / max(len(text), 1)) > 0.02
+
+
 def process_no_toc(page_list, start_index=1, model=None, logger=None, opt=None):
     page_contents = []
     token_lengths = []
@@ -253,26 +269,80 @@ def process_no_toc(page_list, start_index=1, model=None, logger=None, opt=None):
         )
         if logger:
             logger.info(f"pipeline_stage=no_toc_outline segment={seg_index + 1}/{len(group_texts)}")
-        try:
-            hier = generate_structured(
-                user_prompt,
-                HierarchicalTOC,
-                system_prompt=system_prompt,
-                stage="no_toc_outline",
-                batch_index=seg_index,
-            )
-            all_physical.extend(_hierarchical_toc_to_flat_physical(hier))
-        except (TokenBudgetExceeded, TimeoutError, PipelineStageFailure) as exc:
-            if logger:
-                logger.info(
-                    f"process_no_toc: segment {seg_index + 1}/{len(group_texts)} failed ({exc}); skipping"
-                )
+
+        # Skip segments that are clearly garbled OCR glyph codes — the model cannot help.
+        if _is_garbled_ocr(group_text):
             print(
                 f"[PageIndex] stage=no_toc_outline batch={seg_index + 1}/{len(group_texts)} "
-                f"action=skip reason={type(exc).__name__}",
+                f"action=skip reason=garbled_ocr",
                 flush=True,
             )
+            if logger:
+                logger.info(f"process_no_toc: segment {seg_index + 1} skipped — garbled OCR")
             continue
+
+        # Try with full segment; on TokenBudgetExceeded shrink by half and retry once.
+        result = None
+        for attempt, prompt_to_use in enumerate([user_prompt, None]):
+            if attempt == 1:
+                # Shrink: keep first half of the group_text content
+                half = len(group_text) // 2
+                short_text = group_text[:half]
+                prompt_to_use = (
+                    f"Document text with page tags:\n\n{short_text}\n\nReturn the hierarchical JSON object."
+                )
+                print(
+                    f"[PageIndex] stage=no_toc_outline batch={seg_index + 1}/{len(group_texts)} "
+                    f"action=shrink_retry chars={len(short_text)}",
+                    flush=True,
+                )
+            else:
+                prompt_to_use = user_prompt
+
+            try:
+                result = generate_structured(
+                    prompt_to_use,
+                    HierarchicalTOC,
+                    system_prompt=system_prompt,
+                    stage="no_toc_outline",
+                    batch_index=seg_index,
+                )
+                break
+            except TokenBudgetExceeded as exc:
+                if attempt == 0:
+                    print(
+                        f"[PageIndex] stage=no_toc_outline batch={seg_index + 1}/{len(group_texts)} "
+                        f"action=budget_exceeded shrinking",
+                        flush=True,
+                    )
+                    continue
+                # Second attempt also exceeded — skip this segment
+                if logger:
+                    logger.info(
+                        f"process_no_toc: segment {seg_index + 1}/{len(group_texts)} "
+                        f"budget exceeded after shrink; skipping"
+                    )
+                print(
+                    f"[PageIndex] stage=no_toc_outline batch={seg_index + 1}/{len(group_texts)} "
+                    f"action=skip reason=TokenBudgetExceeded",
+                    flush=True,
+                )
+                break
+            except (TimeoutError, PipelineStageFailure) as exc:
+                if logger:
+                    logger.info(
+                        f"process_no_toc: segment {seg_index + 1}/{len(group_texts)} "
+                        f"failed ({type(exc).__name__}); skipping"
+                    )
+                print(
+                    f"[PageIndex] stage=no_toc_outline batch={seg_index + 1}/{len(group_texts)} "
+                    f"action=skip reason={type(exc).__name__}",
+                    flush=True,
+                )
+                break
+
+        if result is not None:
+            all_physical.extend(_hierarchical_toc_to_flat_physical(result))
 
     if logger:
         logger.info(f"process_no_toc: {len(all_physical)} sections from {len(group_texts)} segment(s)")
@@ -828,6 +898,17 @@ async def tree_parser(page_list, opt, doc=None, logger=None, checkpoints=None, r
     )
     toc_tree = semantic_dedupe(toc_tree, logger=logger)
 
+    # ── Phase 2: early validation + deterministic sub-section injection ──────
+    _early_val = validate_semantic_tree({"structure": toc_tree})
+    if not _early_val["checks"].get("chapters_have_children"):
+        print("[PageIndex] stage=subsection_injection action=run reason=no_children", flush=True)
+        added = inject_subsections_into_tree(toc_tree, page_list, logger=logger)
+        if added:
+            print(f"[PageIndex] stage=subsection_injection action=complete children_added={added}", flush=True)
+        else:
+            print("[PageIndex] stage=subsection_injection action=no_headings_found", flush=True)
+    # ─────────────────────────────────────────────────────────────────────────
+
     if checkpoints:
         checkpoints.save("tree_structure.json", toc_tree)
 
@@ -887,6 +968,15 @@ def _write_output_artifacts(result: dict, results_dir: str, pdf_name: str, skip_
             written.append(fname)
         except OSError as e:
             print(f"[PageIndex] artifact_write_error: {fname}: {e}", flush=True)
+
+    # tree.json is an alias used by the video pipeline / frontend
+    tree_path = os.path.join(results_dir, "tree.json")
+    try:
+        with open(tree_path, "w", encoding="utf-8") as f:
+            _json.dump(export_structure, f, ensure_ascii=False, indent=2)
+        written.append("tree.json")
+    except OSError as e:
+        print(f"[PageIndex] artifact_write_error: tree.json: {e}", flush=True)
 
     print(
         f"[PageIndex] artifacts_written: {', '.join(written)} → {results_dir}",
@@ -1051,8 +1141,32 @@ def page_index_main(doc, opt=None):
         print_tree(structure)
         result = {"doc_name": pdf_name, "structure": structure}
         validation = validate_semantic_tree(result, logger=logger)
+
+        # ── Phase 2: final repair pass if hierarchy is still flat ───────────
+        needs_repair = (
+            not validation["checks"].get("chapters_have_children")
+            or not validation["checks"].get("has_hierarchy_depth")
+        )
+        if needs_repair:
+            print(
+                "[PageIndex] stage=final_repair action=inject_subsections "
+                f"failures={validation['failures']}",
+                flush=True,
+            )
+            added = inject_subsections_into_tree(structure, page_list, logger=logger)
+            if added:
+                validation = validate_semantic_tree(result, logger=logger)
+                print(
+                    f"[PageIndex] stage=final_repair action=complete "
+                    f"children_added={added} passed={validation['passed']}",
+                    flush=True,
+                )
+        # ────────────────────────────────────────────────────────────────────
+
         if not validation["passed"]:
             result["validation_warnings"] = validation["failures"]
+            if validation.get("advisory"):
+                result["validation_advisory"] = validation["advisory"]
         checkpoints.save("structure.json", result)
         checkpoints.save("semantic_validation.json", validation)
         _write_output_artifacts(result, results_dir, pdf_name, skip_summaries)

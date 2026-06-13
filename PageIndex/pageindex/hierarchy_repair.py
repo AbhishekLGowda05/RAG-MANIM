@@ -6,6 +6,19 @@ import logging
 import re
 from typing import List, Optional
 
+_GARBLED_RE = re.compile(r"/G\d{2,3}")
+
+# Numbered headings: "1.1 Title" or "1.1.2 Title"
+_RE_NUMBERED_HEADING = re.compile(
+    r"^\s*(\d+\.\d+(?:\.\d+)?)\s+([A-Z][^\n]{3,80})\s*$",
+    re.MULTILINE,
+)
+# All-caps section headings: "HEATING EFFECT OF CURRENT"
+_RE_ALLCAPS_HEADING = re.compile(
+    r"^\s*([A-Z][A-Z\s\-]{5,60})\s*$",
+    re.MULTILINE,
+)
+
 _RE_HEADING = re.compile(
     r"^\s*(?:CHAPTER\s+\d+|\d+(?:\.\d+)+\s+[A-Z]|[A-Z][A-Z\s]{4,})\s*$",
     re.MULTILINE | re.IGNORECASE,
@@ -14,6 +27,137 @@ _RE_LOGICAL_PAGE_MARKER = re.compile(
     r"---\s*Page\s+(\d+)\s*---|—\s*(\d+)\s*—",
     re.IGNORECASE,
 )
+
+
+def _is_garbled(text: str) -> bool:
+    if not text:
+        return False
+    sample = text[:2000]
+    hits = len(_GARBLED_RE.findall(sample))
+    return hits > 10 and (hits / max(len(sample), 1)) > 0.02
+
+
+def extract_section_headings_from_pages(
+    page_list: list,
+    start_page: int,
+    end_page: int,
+    parent_structure: str,
+    min_heading_len: int = 5,
+) -> List[dict]:
+    """Deterministically extract sub-section headings from a chapter's pages.
+
+    Returns a list of raw section entries (no node_id yet) with:
+      structure, title, level, page_number, physical_index
+    """
+    sections: List[dict] = []
+    sub_idx = 1
+    seen: set = set()
+
+    for phys in range(start_page, min(end_page + 1, start_page + len(page_list))):
+        idx = phys - 1
+        if idx < 0 or idx >= len(page_list):
+            break
+        raw = page_list[idx]
+        text = raw[0] if isinstance(raw, (tuple, list)) else (raw.get("text") or "")
+        if not text or _is_garbled(text):
+            continue
+        # numbered headings take priority
+        for m in _RE_NUMBERED_HEADING.finditer(text):
+            num_str, title = m.group(1).strip(), m.group(2).strip()
+            key = title.lower()[:40]
+            if key in seen or len(title) < min_heading_len:
+                continue
+            seen.add(key)
+            sections.append({
+                "structure": f"{parent_structure}.{sub_idx}",
+                "title": title,
+                "level": len(parent_structure.split(".")) + 1,
+                "page_number": phys,
+                "physical_index": phys,
+            })
+            sub_idx += 1
+        # all-caps headings only if no numbered ones found yet for this page
+        if not any(s["physical_index"] == phys for s in sections):
+            for m in _RE_ALLCAPS_HEADING.finditer(text):
+                title = m.group(1).strip().title()  # normalise to Title Case
+                if len(title) < min_heading_len:
+                    continue
+                key = title.lower()[:40]
+                if key in seen:
+                    continue
+                # Skip generic words that appear everywhere
+                skip_words = {"chapter", "section", "contents", "physics", "exercises", "summary"}
+                if title.lower().split()[0] in skip_words:
+                    continue
+                seen.add(key)
+                sections.append({
+                    "structure": f"{parent_structure}.{sub_idx}",
+                    "title": title,
+                    "level": len(parent_structure.split(".")) + 1,
+                    "page_number": phys,
+                    "physical_index": phys,
+                })
+                sub_idx += 1
+
+    return sections
+
+
+def inject_subsections_into_tree(
+    toc_tree: List[dict],
+    page_list: list,
+    logger=None,
+) -> int:
+    """Add child nodes to flat chapter nodes using deterministic heading detection.
+
+    Returns total number of children added across all chapters.
+    """
+    added_total = 0
+    for node in toc_tree:
+        if node.get("nodes") or node.get("children"):
+            continue  # already has children — skip
+        start = node.get("start_index") or node.get("start_page")
+        end = node.get("end_index") or node.get("end_page")
+        struct = str(node.get("structure") or "1")
+        if not start or not end or end <= start:
+            continue
+
+        children_raw = extract_section_headings_from_pages(
+            page_list, int(start), int(end), parent_structure=struct
+        )
+        if not children_raw:
+            continue
+
+        # Build child dicts with correct end pages
+        child_nodes = []
+        for i, ch in enumerate(children_raw):
+            next_start = children_raw[i + 1]["physical_index"] if i + 1 < len(children_raw) else int(end)
+            child_nodes.append({
+                "title": ch["title"],
+                "structure": ch["structure"],
+                "level": ch["level"],
+                "parent_id": node.get("node_id"),
+                "node_id": None,
+                "start_index": ch["physical_index"],
+                "start_page": ch["physical_index"],
+                "end_index": next_start - 1 if next_start > ch["physical_index"] else ch["physical_index"],
+                "end_page": next_start - 1 if next_start > ch["physical_index"] else ch["physical_index"],
+                "summary": "",
+                "keywords": [],
+                "semantic_tags": [],
+                "content_type": "section",
+            })
+
+        node["nodes"] = child_nodes
+        added_total += len(child_nodes)
+        if logger:
+            logger.info(
+                "inject_subsections: %d children added to '%s' (pages %s-%s)",
+                len(child_nodes), node.get("title"), start, end,
+            )
+
+    if logger:
+        logger.info("inject_subsections: %d total children added across all chapters", added_total)
+    return added_total
 
 
 def build_logical_to_physical_map(page_list: list, start_index: int = 1) -> dict:

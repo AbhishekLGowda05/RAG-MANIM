@@ -136,16 +136,26 @@ def _model_is_available(name: str) -> bool:
         return False
 
 
-def _resolve_available_model(preferred: str) -> str:
-    """Pick preferred model if pulled; else best available Gemma (smaller first)."""
+def _resolve_available_model(preferred: str, fail_fast: bool = False) -> str:
+    """Pick preferred model if pulled; else best available fallback (or raise if fail_fast)."""
     preferred = _normalize_ollama_model(preferred)
     if _model_is_available(preferred):
         return preferred
 
     installed = _list_installed_ollama_models()
+    if fail_fast:
+        installed_list = ", ".join(installed) if installed else "(none)"
+        raise RuntimeError(
+            f"\n\nModel not found: {preferred!r}\n"
+            f"Installed models: {installed_list}\n"
+            f"Fix: ollama pull {preferred}\n"
+        )
+
     if not installed:
         logger.warning(
-            "Ollama model %r not found and no models installed. Run: ollama pull %s",
+            "Ollama model %r not found and no models installed.\n"
+            "  ➜  ollama pull %s\n"
+            "Continuing without a resolved model (will likely fail at inference).",
             preferred,
             preferred,
         )
@@ -153,29 +163,33 @@ def _resolve_available_model(preferred: str) -> str:
 
     def _rank(name: str) -> tuple:
         n = name.lower()
-        size_score = 0
+        # Prefer qwen models since they are configured as default
+        family = 9
+        if "qwen2.5-coder" in n:
+            family = 0
+        elif "qwen2.5" in n:
+            family = 1
+        elif "qwen" in n:
+            family = 2
+        elif "gemma3" in n:
+            family = 3
+        elif "gemma" in n:
+            family = 4
+        size_score = 2
         if ":1b" in n or ":2b" in n:
             size_score = 0
-        elif ":4b" in n:
+        elif ":3b" in n or ":4b" in n:
             size_score = 1
         elif ":8b" in n or ":9b" in n or ":e4b" in n:
             size_score = 3
-        else:
-            size_score = 2
-        family = 9
-        if "gemma3" in n:
-            family = 0
-        elif "gemma2" in n:
-            family = 1
-        elif "gemma" in n:
-            family = 2
         return (family, size_score, len(n))
 
     candidates = sorted(installed, key=_rank)
     chosen = candidates[0]
     logger.warning(
-        "Ollama model %r not available; using installed fallback %r. "
-        "Run `ollama pull %s` when ready.",
+        "Ollama model %r not available; using installed fallback %r.\n"
+        "  ➜  ollama pull %s   (to use the configured model)\n"
+        "  ➜  Add --fail-on-missing-model to abort instead of falling back.",
         preferred,
         chosen,
         preferred,
@@ -189,10 +203,11 @@ def configure_from_opt(opt: Any) -> None:
     global MAX_CONTEXT_TOKENS, INFERENCE_TIMEOUT_SECONDS, MAX_RETRIES, ENABLE_GEMINI_FALLBACK
     global PRE_TRUNCATE_AGGRESSIVE, _model_ready, TOC_GENERATION_OPTIONS
 
+    fail_fast = str(getattr(opt, "model_not_found_behavior", "warn")).lower() == "fail"
     gen = getattr(opt, "generation_model", None) or os.environ.get("OLLAMA_MODEL")
     if gen:
         preferred = _normalize_ollama_model(gen)
-        OLLAMA_MODEL = _resolve_available_model(preferred)
+        OLLAMA_MODEL = _resolve_available_model(preferred, fail_fast=fail_fast)
 
     fb = getattr(opt, "fallback_model", None)
     if fb:
@@ -263,12 +278,15 @@ def _ensure_model_for(model_name: str) -> str:
     preferred = _normalize_ollama_model(model_name)
     if preferred in _resolved_models:
         return _resolved_models[preferred]
-    resolved = _resolve_available_model(preferred)
+    fail_fast = os.environ.get("PAGEINDEX_FAIL_ON_MISSING_MODEL", "0") == "1"
+    resolved = _resolve_available_model(preferred, fail_fast=fail_fast)
     _resolved_models[preferred] = resolved
     if _model_is_available(resolved):
         logger.info("Ollama model %r ready", resolved)
     else:
-        logger.warning("Ollama model %r not ready — run: ollama pull %s", resolved, resolved)
+        logger.warning(
+            "Ollama model %r not ready — run: ollama pull %s", resolved, resolved
+        )
     return resolved
 
 

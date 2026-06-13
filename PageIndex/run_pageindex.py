@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from pageindex import *
 from pageindex.page_index_md import md_to_tree
-from pageindex.utils import ConfigLoader, print_tree
+from pageindex.utils import ConfigLoader, get_pdf_name, print_tree
 
 # Example CLI:
 #   python run_pageindex.py --pdf_path ./doc.pdf --demo
@@ -128,6 +128,10 @@ if __name__ == "__main__":
                       help='Disable Gemini API fallback; fail if local Ollama inference fails')
     parser.add_argument('--force-reindex', action='store_true', default=False,
                       help='Re-index even if a cached structure.json already exists for this PDF')
+    parser.add_argument('--quality', action='store_true', default=False,
+                      help='Quality mode: route chapter_summary and outline stages to qwen2.5-coder:7b')
+    parser.add_argument('--fail-on-missing-model', action='store_true', default=False,
+                      help='Exit immediately if the configured Ollama model is not pulled')
     parser.add_argument('--if-thinning', type=str, default='no',
                       help='Whether to apply tree thinning for markdown (markdown only)')
     parser.add_argument('--thinning-threshold', type=int, default=5000,
@@ -151,7 +155,7 @@ if __name__ == "__main__":
             raise ValueError("PDF file must have .pdf extension")
         pdf_path = _resolve_existing_file(args.pdf_path, "PDF file")
 
-        pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        pdf_name = get_pdf_name(pdf_path)
         output_dir = os.path.join('./results', pdf_name)
         os.makedirs(output_dir, exist_ok=True)
 
@@ -180,6 +184,7 @@ if __name__ == "__main__":
                 'max_pages': effective_max_pages,
                 'model': args.model,
                 'enable_gemini_fallback': 'no' if args.no_gemini_fallback else None,
+                'model_not_found_behavior': 'fail' if args.fail_on_missing_model else None,
                 'toc_check_page_num': args.toc_check_pages,
                 'max_page_num_each_node': args.max_pages_per_node,
                 'max_token_num_each_node': args.max_tokens_per_node,
@@ -190,20 +195,33 @@ if __name__ == "__main__":
             }
             opt = ConfigLoader().load({k: v for k, v in user_opt.items() if v is not None})
 
+            if args.quality:
+                from pageindex.model_router import set_quality_mode
+                # Pull quality overrides from config if present
+                quality_overrides = getattr(opt, 'quality_mode', None)
+                if isinstance(quality_overrides, dict):
+                    stage_overrides = {
+                        k: v for k, v in quality_overrides.items()
+                        if not k.startswith('inference_') and not k.startswith('max_')
+                    }
+                    set_quality_mode(enabled=True, quality_overrides=stage_overrides or None)
+                    # Also apply timeout/token overrides from quality_mode section
+                    for key in ('inference_timeout_seconds', 'max_prompt_tokens', 'max_context_tokens'):
+                        val = quality_overrides.get(key)
+                        if val is not None:
+                            setattr(opt, key, int(val))
+                else:
+                    set_quality_mode(enabled=True)
+                print("[PageIndex] quality mode: chapter_summary / outline → qwen2.5-coder:7b", flush=True)
+
             toc_with_page_number = page_index_main(pdf_path, opt)
             print("\n" + "=" * 72)
             print("FULL DOCUMENT TREE (post-indexing) — run_pageindex")
             print("=" * 72)
             print_tree(toc_with_page_number.get("structure", []))
-            print('Parsing done, saving to file...')
-
-            structure_path = os.path.join(output_dir, 'structure.json')
-            with open(structure_path, 'w', encoding='utf-8') as f:
-                json.dump(toc_with_page_number, f, indent=2)
-
             _write_cache(pdf_path, output_dir)
-            print(f'Tree structure saved to: {structure_path}')
             print(f'Artifacts directory: {output_dir}/')
+            print(f'Available files: {", ".join(sorted(f for f in os.listdir(output_dir) if f.endswith(".json")))}')
 
     elif args.md_path:
         if not args.md_path.lower().endswith(('.md', '.markdown')):

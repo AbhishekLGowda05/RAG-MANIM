@@ -21,6 +21,16 @@ TOC_LINE_ALT = re.compile(
     re.MULTILINE,
 )
 
+# Matches "N. Title  M" and "N. Title M" — no dot-leader, plain space(s) before page number.
+# Requires the chapter number prefix so we don't match random body sentences.
+TOC_LINE_SIMPLE = re.compile(
+    r"^(?P<indent>\s*)"
+    r"(?P<num>\d+(?:\.\d+)*)\.\s+"
+    r"(?P<title>.{2,120}?)\s{1,10}"
+    r"(?P<page>\d{1,4})\s*$",
+    re.MULTILINE,
+)
+
 _RE_NUM_ONLY = re.compile(r"^\s*(\d+(?:\.\d+)*)\s*$")
 _RE_PAGE_ONLY = re.compile(r"^\s*(\d{1,4})\s*$")
 _RE_TOC_HEADER = re.compile(r"\bTABLE\s+OF\s+CONTENTS\b", re.IGNORECASE)
@@ -45,11 +55,22 @@ def _normalize_num(num: str) -> str:
     return num.strip().rstrip(".")
 
 
+_LEADING_SEP = re.compile(r"^[\.\)\-\:\|\s]+")
+_TRAILING_DOTS = re.compile(r"[\.\s]+$")
+
+
+def _clean_title(title: str) -> str:
+    """Strip leading/trailing punctuation artefacts (e.g. '. Title .........')."""
+    title = _LEADING_SEP.sub("", title)
+    title = _TRAILING_DOTS.sub("", title)
+    return title.strip()
+
+
 def _make_entry(num: str, title: str, page_num: int, indent: int = 0) -> dict:
     num = _normalize_num(num)
     return {
         "structure": num or None,
-        "title": title.strip(),
+        "title": _clean_title(title),
         "page_number": page_num,
         "level": _structure_level(num) if num else 1,
         "indent": indent,
@@ -58,7 +79,8 @@ def _make_entry(num: str, title: str, page_num: int, indent: int = 0) -> dict:
 
 def _parse_layout_a(text: str) -> List[dict]:
     entries: List[dict] = []
-    for pattern in (TOC_LINE, TOC_LINE_ALT):
+    for pattern in (TOC_LINE, TOC_LINE_ALT, TOC_LINE_SIMPLE):
+        found: List[dict] = []
         for m in pattern.finditer(text):
             title = (m.group("title") or "").strip()
             if not title or len(title) < 2 or _JUNK_TITLES.match(title):
@@ -68,9 +90,9 @@ def _parse_layout_a(text: str) -> List[dict]:
             except (TypeError, ValueError):
                 continue
             num = (m.group("num") or "").strip().rstrip(".")
-            entries.append(_make_entry(num, title, page_num, _indent_level(m.group("indent") or "")))
-        if entries:
-            break
+            found.append(_make_entry(num, title, page_num, _indent_level(m.group("indent") or "")))
+        if len(found) > len(entries):
+            entries = found
     return entries
 
 
@@ -134,13 +156,17 @@ def _parse_layout_c_title_page(text: str) -> List[dict]:
 
 
 def parse_toc(text: str) -> Tuple[List[dict], float]:
-    entries: List[dict] = []
+    best_entries: List[dict] = []
+    best_confidence = 0.0
     for parser in (_parse_layout_a, _parse_layout_b_vertical_triplet, _parse_layout_c_title_page):
         entries = parser(text)
-        if len(entries) >= 3:
-            break
-    confidence = _toc_confidence(entries, text)
-    return entries, confidence
+        if len(entries) < 2:
+            continue
+        confidence = _toc_confidence(entries, text)
+        if confidence > best_confidence or len(entries) > len(best_entries):
+            best_entries = entries
+            best_confidence = confidence
+    return best_entries, best_confidence
 
 
 def find_toc_page_index(page_texts: List[str], max_scan: int = 20) -> Optional[int]:

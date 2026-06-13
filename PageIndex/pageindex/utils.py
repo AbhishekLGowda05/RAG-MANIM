@@ -48,6 +48,16 @@ SUMMARY_BATCH_SIZE = 2
 MAX_PROMPT_TOKENS_DEFAULT = 3500
 PROMPT_OVERHEAD_TOKENS = 400
 EXTRACTIVE_MIN_CONFIDENCE = 0.55
+
+_GARBLED_RE = re.compile(r"/G\d{2,3}")
+
+
+def _is_garbled_ocr(text: str) -> bool:
+    """Return True when text is mostly PDF glyph codes (/G65…), making SLM useless."""
+    if not text:
+        return False
+    hits = len(_GARBLED_RE.findall(text[:2000]))
+    return hits > 10 and (hits / max(len(text[:2000]), 1)) > 0.02
 EXTRACTIVE_MAX_SENTENCES = 3
 SLM_FALLBACK_RATIO_MAX = 0.50
 _slm_calls_budget: dict = {"used": 0, "max": None}
@@ -822,6 +832,15 @@ async def _summarize_chapter_node(node, model=None, opt=None):
     """Synthesize chapter summary from child section summaries (not raw body)."""
     child_blob = _collect_child_summaries(node)
     raw = (node.get("text") or "")[:1500]
+
+    # Short-circuit: garbled PDF glyph codes cannot be summarised — skip SLM entirely.
+    if _is_garbled_ocr(raw) and not child_blob:
+        title = node.get("title", "") or "Chapter"
+        node["summary"] = f"This chapter covers: {title}."
+        node["keywords"] = []
+        node["_summary_source"] = "title_only_garbled"
+        return
+
     if len(child_blob) >= 500:
         prompt_body = child_blob[:4000]
     else:
@@ -862,7 +881,17 @@ async def _summarize_chapter_node(node, model=None, opt=None):
         node["summary"] = child_blob[:800]
         node["_summary_source"] = "chapter_children_concat"
     else:
-        node["summary"] = node.get("title", "") or "Chapter"
+        text = (node.get("text") or "")[:3000]
+        if text:
+            ext = extractive.summarize(text, max_sentences=3)
+            if ext.get("summary") and len(ext["summary"]) >= 20:
+                node["summary"] = ext["summary"]
+                node["keywords"] = ext.get("keywords", [])
+                node["_summary_source"] = "extractive_chapter_fallback"
+                return
+        title = node.get("title", "") or "Chapter"
+        node["summary"] = f"This chapter covers: {title}."
+        node["_summary_source"] = "title_only"
 
 
 async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, opt=None):
@@ -876,6 +905,13 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
         text = node.get("text", "") or ""
         if max_chars and len(text) > max_chars:
             text = text[:max_chars] + "\n...(truncated)"
+        # For garbled OCR, skip extractive — glyph codes produce nonsense sentences.
+        if _is_garbled_ocr(text):
+            title = node.get("title", "") or "Section"
+            node["summary"] = f"This section covers: {title}."
+            node["keywords"] = []
+            node["_summary_source"] = "title_only_garbled"
+            continue
         ext = extractive.summarize(text, max_sentences=max_sentences)
         if ext["confidence"] >= EXTRACTIVE_MIN_CONFIDENCE and ext["summary"]:
             node["summary"] = ext["summary"]
@@ -978,9 +1014,20 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
 
     for node in batch:
         if not node.get("summary"):
-            node["summary"] = node.get("title", "") or "Section"
-            node["keywords"] = node.get("keywords", [])
-            node["_summary_source"] = "title_only"
+            text = (node.get("text") or "")
+            filled = False
+            if text:
+                ext = extractive.summarize(text[:3000], max_sentences=2)
+                if ext.get("summary") and len(ext["summary"]) >= 20:
+                    node["summary"] = ext["summary"]
+                    node["keywords"] = ext.get("keywords", [])
+                    node["_summary_source"] = "extractive_final_fallback"
+                    filled = True
+            if not filled:
+                title = node.get("title", "") or "Section"
+                node["summary"] = f"This section covers: {title}."
+                node["keywords"] = node.get("keywords", [])
+                node["_summary_source"] = "title_only"
             try:
                 from .telemetry import PipelineMetrics
                 PipelineMetrics.record_title_only("summary_generation")

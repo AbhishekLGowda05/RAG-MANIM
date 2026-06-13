@@ -21,28 +21,28 @@ if_add_node_text: "no"
 mode: "cpu"
 
 stage_models:
-  toc_detection: "ollama/gemma4:e4b"
-  toc_index_extractor: "ollama/gemma4:e4b"
-  no_toc_outline: "ollama/gemma4:e4b"
-  tree_construction: "ollama/gemma4:e4b"
-  summary_generation: "ollama/gemma4:e4b"
-  chapter_summary: "ollama/gemma4:e4b"
+  toc_detection: "ollama/qwen2.5:3b"
+  toc_index_extractor: "ollama/qwen2.5:3b"
+  no_toc_outline: "ollama/qwen2.5:3b"
+  tree_construction: "ollama/qwen2.5:3b"
+  summary_generation: "ollama/qwen2.5:3b"
+  chapter_summary: "ollama/qwen2.5:3b"
   title_cleanup: "ollama/qwen2.5:3b"
   ocr_cleanup: "ollama/qwen2.5:3b"
   extractive_polish: "ollama/qwen2.5:3b"
   doc_description: "ollama/qwen2.5:3b"
 
 cpu_mode:
-  inference_timeout_seconds: 600
-  toc_batch_timeout_seconds: 120
-  toc_pages_per_batch: 1
-  toc_page_chars_limit: 5000
+  inference_timeout_seconds: 120
+  toc_batch_timeout_seconds: 60
+  toc_pages_per_batch: 2
+  toc_page_chars_limit: 4000
   toc_num_predict: 1024
   summary_num_predict: 512
   summary_nodes_per_batch: 1
-  max_prompt_tokens: 3500
-  max_context_tokens: 4096
-  recursive_depth: 1
+  max_prompt_tokens: 4500
+  max_context_tokens: 6144
+  recursive_depth: 0
   max_retries: 2
   max_summary_pages: null
   toc_check_page_num: 10
@@ -81,6 +81,21 @@ gpu_mode:
   tree_max_depth: 8
   toc_deterministic_min_confidence: 0.55
   boundary_extend_max_pages: 2
+
+# Quality mode — activated by --quality CLI flag
+# Overrides chapter_summary and toc_index_extractor to a larger, schema-strict model.
+quality_mode:
+  chapter_summary: "ollama/qwen2.5-coder:7b"
+  toc_index_extractor: "ollama/qwen2.5-coder:7b"
+  no_toc_outline: "ollama/qwen2.5-coder:7b"
+  inference_timeout_seconds: 360
+  max_prompt_tokens: 5500
+  max_context_tokens: 8192
+
+# model_not_found_behavior:
+#   "warn"  — log a pull command, use any installed fallback (default, lenient)
+#   "fail"  — raise immediately so the user knows to pull the correct model first
+model_not_found_behavior: "warn"
 
 demo_overrides:
   max_pages: 30

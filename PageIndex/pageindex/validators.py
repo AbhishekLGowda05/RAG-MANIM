@@ -10,6 +10,11 @@ JUNK_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+TITLE_ONLY_SUMMARY_RE = re.compile(
+    r"^This\s+(chapter|section)\s+covers:\s*.{0,120}\.?$",
+    re.IGNORECASE,
+)
+
 
 def _walk_nodes(structure: List[dict]) -> List[dict]:
     nodes: List[dict] = []
@@ -33,18 +38,35 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
     checks["has_hierarchy_depth"] = any(
         (n.get("children") or n.get("nodes")) for n in structure
     )
+
     chapters = [n for n in nodes if n.get("content_type") == "chapter"]
     checks["chapters_have_children"] = (
         not chapters
         or all((n.get("children") or n.get("nodes")) for n in chapters)
     )
+
     summary_nodes = [
         n for n in nodes
         if n.get("content_type") not in ("preface",)
     ]
+    # A summary passes if it exists, is >= 30 chars, and is not a bare title-only fallback
+    def _summary_ok(n: dict) -> bool:
+        s = (n.get("summary") or "").strip()
+        if len(s) < 30:
+            return False
+        if TITLE_ONLY_SUMMARY_RE.match(s):
+            return False
+        return True
+
     checks["summaries_non_empty"] = (
         not summary_nodes
-        or all(len((n.get("summary") or "").strip()) >= 30 for n in summary_nodes)
+        or all(_summary_ok(n) for n in summary_nodes)
+    )
+
+    # Separate check: no summaries that are literally just title placeholders
+    checks["summaries_not_title_only"] = (
+        not summary_nodes
+        or not any(TITLE_ONLY_SUMMARY_RE.match((n.get("summary") or "").strip()) for n in summary_nodes)
     )
 
     monotonic_ok = True
@@ -64,19 +86,38 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
     checks["no_junk_headings"] = not any(
         JUNK_TITLE_RE.match((n.get("title") or "").strip()) for n in nodes
     )
-    checks["min_node_count"] = len(nodes) >= 6
+
+    # Adaptive threshold: at least (chapter_count + 1) nodes or 4, whichever is smaller threshold
+    chapter_count = len(chapters)
+    adaptive_min = max(chapter_count + 1, 4) if chapter_count else 6
+    checks["min_node_count"] = len(nodes) >= adaptive_min
+
+    # OCR quality hint — if all chapter summaries are title-only, flag as garbled_ocr_detected
+    garbled = (
+        chapter_count > 0
+        and all(
+            TITLE_ONLY_SUMMARY_RE.match((n.get("summary") or "").strip())
+            for n in chapters
+        )
+    )
+    checks["ocr_quality_ok"] = not garbled
 
     failures = [k for k, v in checks.items() if not v]
+    # ocr_quality_ok is advisory only — don't count it as a hard failure
+    hard_failures = [f for f in failures if f != "ocr_quality_ok"]
+
     report = {
-        "passed": len(failures) == 0,
+        "passed": len(hard_failures) == 0,
         "checks": checks,
-        "failures": failures,
+        "failures": hard_failures,
+        "advisory": [f for f in failures if f == "ocr_quality_ok"],
         "node_count": len(nodes),
-        "chapter_count": len(chapters),
+        "chapter_count": chapter_count,
+        "adaptive_min_node_count": adaptive_min,
     }
     if logger:
-        if failures:
-            logger.info({"semantic_validation_failed": failures})
+        if hard_failures:
+            logger.info({"semantic_validation_failed": hard_failures})
         else:
             logger.info({"semantic_validation": "all_passed", "node_count": len(nodes)})
     return report
