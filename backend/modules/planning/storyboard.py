@@ -131,15 +131,42 @@ Return a JSON array of exactly 5 objects:
 Return ONLY the JSON array."""
 
 
+def _build_curriculum_anchor(curriculum_context: str, curriculum_sections: list | None) -> str:
+    """Prepend a keyword anchor block if sections are available, for tighter LLM alignment."""
+    if not curriculum_sections:
+        return curriculum_context
+    anchor_lines = []
+    for sec in curriculum_sections[:3]:
+        kws = sec.get("keywords") or []
+        pages = f"pp. {sec.get('start_page')}-{sec.get('end_page')}" if sec.get("start_page") else ""
+        title = sec.get("title", "")
+        breadcrumb = sec.get("breadcrumb", "") or title
+        line = f"  • {breadcrumb}"
+        if pages:
+            line += f" [{pages}]"
+        if kws:
+            line += f" — key terms: {', '.join(kws[:8])}"
+        anchor_lines.append(line)
+    if not anchor_lines:
+        return curriculum_context
+    anchor_block = "MATCHED CURRICULUM SECTIONS:\n" + "\n".join(anchor_lines)
+    if curriculum_context:
+        return f"{anchor_block}\n\nDETAILED CONTEXT:\n{curriculum_context}"
+    return anchor_block
+
+
 def build_storyboard(
     topic: str,
     curriculum_context: str = "",
+    curriculum_sections: list | None = None,
     learner_profile: dict[str, Any] | None = None,
     subject: str = "Physics",
 ) -> list[dict[str, Any]]:
     """Generate a 5-scene storyboard arc for the given topic."""
     logger.info("Building storyboard for topic: %s", topic)
     client = NvidiaClient()
+
+    enriched_context = _build_curriculum_anchor(curriculum_context, curriculum_sections)
 
     mechanics_middle = [
         t for t in MECHANICS_TEMPLATE_IDS if t not in ("intro", "summary")
@@ -152,7 +179,7 @@ def build_storyboard(
     learner_context = format_learner_context(learner_profile, topic, subject)
     prompt = STORYBOARD_PROMPT.format(
         topic=topic,
-        curriculum_context=curriculum_context,
+        curriculum_context=enriched_context,
         learner_context=learner_context,
         mechanics_list=mechanics_list,
         explain_list=explain_list,

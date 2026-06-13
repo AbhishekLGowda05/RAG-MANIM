@@ -58,7 +58,10 @@ from modules.planning.narration_writer import write_all_narrations
 from modules.planning.asset_registry import reset_registry
 from modules.planning.profile_context import format_learner_context
 
-from modules.retrieval.pageindex_retriever import retrieve_curriculum_context
+from modules.retrieval.pageindex_retriever import (
+    retrieve_curriculum_context,
+    retrieve_curriculum_sections,
+)
 
 from modules.tts.piper_tts import synthesize
 from modules.sync.sync_engine import synchronize_all
@@ -418,8 +421,27 @@ async def run_pipeline_task(
         await asyncio.sleep(0.5)
 
         # --- Stage 1: Retrieve curriculum context ---
+        curriculum_sections = retrieve_curriculum_sections(topic)
         curriculum_context = retrieve_curriculum_context(topic)
-        logger.info("Retrieved curriculum context length=%s", len(curriculum_context))
+        if curriculum_sections:
+            section_log = [
+                {
+                    "title": s.get("title"),
+                    "breadcrumb": s.get("breadcrumb"),
+                    "pages": f"{s.get('start_page')}-{s.get('end_page')}",
+                    "score": round(s.get("score", 0), 3),
+                    "keywords": s.get("keywords", [])[:5],
+                    "artifacts_dir": s.get("artifacts_dir"),
+                }
+                for s in curriculum_sections
+            ]
+            logger.info(
+                "curriculum_sections topic=%r matched=%d sections=%s",
+                topic, len(curriculum_sections), section_log,
+            )
+        else:
+            logger.warning("curriculum_sections topic=%r matched=0 (no sections found)", topic)
+        logger.info("curriculum_context topic=%r length=%s", topic, len(curriculum_context))
 
         # --- Stage 2: Storyboard ---
         await queue.put({
@@ -431,6 +453,7 @@ async def run_pipeline_task(
         storyboard = build_storyboard(
             topic=topic,
             curriculum_context=curriculum_context,
+            curriculum_sections=curriculum_sections,
             learner_profile=learner_profile,
             subject=subject
         )
@@ -653,6 +676,50 @@ async def get_pipeline_status(session_id: str):
                 break
                 
     return StreamingResponse(sse_event_generator(), media_type="text/event-stream")
+
+@app.get("/api/pageindex/health")
+async def pageindex_health():
+    """Check PageIndex artifact freshness and return tree summary."""
+    from modules.retrieval.pageindex_retriever import PDF_PATH, _get_artifacts
+    try:
+        arts = _get_artifacts()
+    except FileNotFoundError as e:
+        return {
+            "status": "not_indexed",
+            "message": str(e),
+            "pdf": str(PDF_PATH),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+    available = arts.list_artifacts()
+    structure_data = arts.load("structure.json") or {}
+    nodes = arts.walk_nodes()
+    chapters = [n for n in nodes if n.get("content_type") == "chapter"]
+    validation = arts.load("semantic_validation.json") or {}
+    metrics = arts.load("pipeline_metrics.json") or {}
+
+    return {
+        "status": "ready",
+        "pdf": str(PDF_PATH),
+        "results_dir": str(arts.results_dir),
+        "artifacts": available,
+        "node_count": len(nodes),
+        "chapter_count": len(chapters),
+        "chapters": [
+            {
+                "title": c.get("title"),
+                "pages": f"{c.get('start_page') or c.get('start_index')}-{c.get('end_page') or c.get('end_index')}",
+                "children": len(c.get("nodes") or c.get("children") or []),
+            }
+            for c in chapters
+        ],
+        "validation_passed": validation.get("passed"),
+        "validation_failures": validation.get("failures", []),
+        "validation_advisory": validation.get("advisory", []),
+        "total_runtime_s": metrics.get("total_runtime_s"),
+    }
+
 
 @app.get("/api/health")
 async def health_check():
