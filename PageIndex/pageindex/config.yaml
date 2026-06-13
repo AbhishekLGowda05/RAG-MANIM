@@ -38,7 +38,7 @@ cpu_mode:
   toc_pages_per_batch: 2
   toc_page_chars_limit: 4000
   toc_num_predict: 1024
-  summary_num_predict: 512
+  summary_num_predict: 384
   summary_nodes_per_batch: 1
   max_prompt_tokens: 4500
   max_context_tokens: 6144
@@ -56,6 +56,10 @@ cpu_mode:
   tree_max_depth: 4
   toc_deterministic_min_confidence: 0.55
   boundary_extend_max_pages: 2
+  chapter_summary_timeout_seconds: 45
+
+validation:
+  fragment_summary_max_fragment_ratio: 0.40
 
 gpu_mode:
   inference_timeout_seconds: 180

@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+from .heading_hints import (
+    CONTINUATION_WORDS,
+    JUNK_STARTERS,
+    SCIENCE_HEADING_HINTS,
+    SINGLE_WORD_HEADINGS,
+)
 
 _GARBLED_RE = re.compile(r"/G\d{2,3}")
 
@@ -73,12 +80,160 @@ def _is_garbled(text: str) -> bool:
     return hits > 10 and (hits / max(len(sample), 1)) > 0.02
 
 
+def _merge_wrapped_heading(line: str, next_line: Optional[str]) -> Tuple[str, bool]:
+    """Merge a heading wrapped onto the next line when clearly a continuation.
+
+    Returns (merged_text, consumed_next_line).
+    """
+    s = line.rstrip()
+    if not next_line:
+        return s, False
+    nxt = next_line.strip()
+    if not nxt:
+        return s, False
+    # Next line is already a complete heading — do not merge.
+    if len(nxt.split()) >= 3 and _is_title_case_heading(nxt):
+        return s, False
+    words = s.split()
+    last_word = words[-1].lower().rstrip("'s") if words else ""
+    next_is_cont = (
+        nxt[0].islower()
+        or nxt.split()[0].lower() in CONTINUATION_WORDS
+    )
+    if (last_word in CONTINUATION_WORDS or next_is_cont) and len(nxt.split()) <= 4:
+        merged = f"{s} {nxt}".strip()
+        if _is_exercise_or_table_artifact(merged):
+            return s, False
+        return merged, True
+    return s, False
+
+
+def _is_exercise_or_table_artifact(title: str) -> bool:
+    if re.search(r"[\u0180-\u024F]|Ɵ", title):
+        return True
+    if re.search(r"^\d+\s+[A-Z][a-z]{0,2}\b", title):
+        return True
+    if "→" in title or re.search(r"\bHint\s*:", title, re.I):
+        return True
+    if re.search(r"[a-z][A-Z]", title):
+        return True
+    if re.search(r"Redox ReactionsRedox|\+ water", title, re.I):
+        return True
+    if re.search(r"\b(?:model|law)\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s*$", title):
+        return True
+    if re.search(r"\bIUPAC\b|\bSymbol\b|\bConstituent\b|\bElectronegativity\b", title):
+        return True
+    if re.search(r"Ca\d|Na\+|HNO\d", title):
+        return True
+    if "diagram" in title.lower() and len(title) > 42:
+        return True
+    if re.search(r"\s+[A-Z]\.\s*[A-Z]\.\s+\w+\s*$", title):
+        return True
+    if re.search(r",\s*a\s*$", title, re.I):
+        return True
+    if re.search(r"\b(?:rays|Neutron)\s+[A-Z][a-z]+\s*$", title):
+        return True
+    return False
+
+
+def _is_table_noise(title: str) -> bool:
+    if re.search(r"\d+:\d+", title):
+        return True
+    if title.count(",") >= 2:
+        return True
+    if re.search(r"(?:H\d+O|C\d+H|\bTable\s+\d)", title, re.I):
+        return True
+    return False
+
+
+def _is_person_name(title: str) -> bool:
+    s = title.strip()
+    if re.match(r"^[A-Z]\.\s*[A-Z]\.\s+\w+", s):
+        return True
+    words = s.split()
+    if 2 <= len(words) <= 3 and all(w[:1].isupper() for w in words):
+        if not any(w.lower() in SCIENCE_HEADING_HINTS for w in words):
+            if not any(w.lower() in {"model", "law", "experiment", "atom", "table", "group"} for w in words):
+                return True
+    return False
+
+
+def _is_title_case_heading(line: str) -> bool:
+    s = line.strip()
+    words = s.split()
+    if not (2 <= len(words) <= 9):
+        if len(words) == 1 and words[0].lower() in SINGLE_WORD_HEADINGS:
+            return True
+        return False
+    if s[-1] in ".:,;?":
+        return False
+    if _is_table_noise(s) or _is_person_name(s) or _is_exercise_or_table_artifact(s):
+        return False
+    if "diagram" in s.lower() and "experiment" not in s.lower() and "model" not in s.lower():
+        return False
+    if any(ch.isdigit() for ch in s) and not re.search(r"[A-Za-z]{4,}", s):
+        return False
+    cap = sum(1 for w in words if w[:1].isupper())
+    if cap / len(words) < 0.6:
+        return False
+    if words[-1].lower() in CONTINUATION_WORDS:
+        return False
+    if _is_junk_heading(s) or words[0].lower() in JUNK_STARTERS:
+        return False
+    if any(w.lower().strip("'s") in SCIENCE_HEADING_HINTS for w in words):
+        return True
+    return len(words) <= 6
+
+
+def _extract_titlecase_headings_from_text(
+    text: str,
+    phys: int,
+    parent_structure: str,
+    sub_idx: int,
+    seen: set,
+    min_heading_len: int,
+) -> Tuple[List[dict], int]:
+    """Scan page lines for unnumbered Title-Case headings."""
+    found: List[dict] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        raw_line = lines[i].strip()
+        if not raw_line:
+            i += 1
+            continue
+        next_line = lines[i + 1] if i + 1 < len(lines) else None
+        candidate, consumed = _merge_wrapped_heading(raw_line, next_line)
+        if not _is_title_case_heading(candidate):
+            i += 1
+            continue
+        title = candidate.strip()
+        if len(title) < min_heading_len:
+            i += 2 if consumed else 1
+            continue
+        key = title.lower()[:40]
+        if key in seen:
+            i += 2 if consumed else 1
+            continue
+        seen.add(key)
+        found.append({
+            "structure": f"{parent_structure}.{sub_idx}",
+            "title": title,
+            "level": len(parent_structure.split(".")) + 1,
+            "page_number": phys,
+            "physical_index": phys,
+        })
+        sub_idx += 1
+        i += 2 if consumed else 1
+    return found, sub_idx
+
+
 def extract_section_headings_from_pages(
     page_list: list,
     start_page: int,
     end_page: int,
     parent_structure: str,
-    min_heading_len: int = 5,
+    min_heading_len: int = 8,
     min_content_page: int = 1,
 ) -> List[dict]:
     """Deterministically extract sub-section headings from a chapter's pages.
@@ -137,6 +292,12 @@ def extract_section_headings_from_pages(
                     "physical_index": phys,
                 })
                 sub_idx += 1
+        # Title-Case headings when no numbered/all-caps found on this page
+        if not any(s["physical_index"] == phys for s in sections):
+            tc_found, sub_idx = _extract_titlecase_headings_from_text(
+                text, phys, parent_structure, sub_idx, seen, min_heading_len,
+            )
+            sections.extend(tc_found)
 
     return sections
 

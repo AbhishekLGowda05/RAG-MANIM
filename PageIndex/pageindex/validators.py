@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 JUNK_TITLE_RE = re.compile(
     r"^(?:PHYSICS|CBSE\s+Grade|NCERT|Visual\s+AI\s+Teaching|Physics\s+for\s+Everyone|Grade\s+\d+\s*\|)",
@@ -20,6 +20,32 @@ DOUBLED_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_VERB_LIKE = re.compile(
+    r"\b(?:is|are|was|were|has|have|had|can|will|may|show|shows|found|discovered|"
+    r"conducted|proposed|known|called|revolve|emit|pass|contain|determine|explain)\b",
+    re.IGNORECASE,
+)
+
+DEFAULT_FRAGMENT_MAX_RATIO = 0.40
+
+
+def _is_fragment_sentence(s: str) -> bool:
+    words = s.split()
+    if len(words) < 4:
+        return True
+    if not _VERB_LIKE.search(s):
+        return True
+    return False
+
+
+def _summary_fragment_ratio(summary: str) -> float:
+    parts = re.split(r"(?<=[.!?])\s+|\n+", summary.strip())
+    parts = [p.strip() for p in parts if len(p.strip()) > 8]
+    if not parts:
+        return 1.0
+    fragments = sum(1 for p in parts if _is_fragment_sentence(p))
+    return fragments / len(parts)
+
 
 def _walk_nodes(structure: List[dict]) -> List[dict]:
     nodes: List[dict] = []
@@ -34,11 +60,20 @@ def _walk_nodes(structure: List[dict]) -> List[dict]:
     return nodes
 
 
-def validate_semantic_tree(result: dict, logger=None) -> dict:
+def validate_semantic_tree(
+    result: dict,
+    logger=None,
+    fragment_max_ratio: Optional[float] = None,
+) -> dict:
     """Run semantic checks; return report dict with pass/fail per check."""
     structure = result.get("structure") or []
     nodes = _walk_nodes(structure) if structure else []
     checks: Dict[str, Any] = {}
+    frag_threshold = (
+        fragment_max_ratio
+        if fragment_max_ratio is not None
+        else DEFAULT_FRAGMENT_MAX_RATIO
+    )
 
     checks["has_hierarchy_depth"] = any(
         (n.get("children") or n.get("nodes")) for n in structure
@@ -54,12 +89,14 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
         n for n in nodes
         if n.get("content_type") not in ("preface",)
     ]
-    # A summary passes if it exists, is >= 30 chars, and is not a bare title-only fallback
+
     def _summary_ok(n: dict) -> bool:
         s = (n.get("summary") or "").strip()
         if len(s) < 30:
             return False
         if TITLE_ONLY_SUMMARY_RE.match(s):
+            return False
+        if _summary_fragment_ratio(s) > frag_threshold:
             return False
         return True
 
@@ -68,10 +105,14 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
         or all(_summary_ok(n) for n in summary_nodes)
     )
 
-    # Separate check: no summaries that are literally just title placeholders
     checks["summaries_not_title_only"] = (
         not summary_nodes
         or not any(TITLE_ONLY_SUMMARY_RE.match((n.get("summary") or "").strip()) for n in summary_nodes)
+    )
+
+    checks["semantic_tags_present"] = (
+        not summary_nodes
+        or all(n.get("semantic_tags") for n in summary_nodes)
     )
 
     monotonic_ok = True
@@ -94,12 +135,10 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
         for n in nodes
     )
 
-    # Adaptive threshold: at least (chapter_count + 1) nodes or 4, whichever is smaller threshold
     chapter_count = len(chapters)
     adaptive_min = max(chapter_count + 1, 4) if chapter_count else 6
     checks["min_node_count"] = len(nodes) >= adaptive_min
 
-    # OCR quality hint — if all chapter summaries are title-only, flag as garbled_ocr_detected
     garbled = (
         chapter_count > 0
         and all(
@@ -110,7 +149,6 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
     checks["ocr_quality_ok"] = not garbled
 
     failures = [k for k, v in checks.items() if not v]
-    # ocr_quality_ok is advisory only — don't count it as a hard failure
     hard_failures = [f for f in failures if f != "ocr_quality_ok"]
 
     report = {
@@ -121,6 +159,7 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
         "node_count": len(nodes),
         "chapter_count": chapter_count,
         "adaptive_min_node_count": adaptive_min,
+        "fragment_max_ratio": frag_threshold,
     }
     if logger:
         if hard_failures:

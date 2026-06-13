@@ -43,6 +43,7 @@ from .local_llm import (
 )
 from .schemas import DocDescription, PlainSummary, SummaryBatch
 from . import extractive
+from .pedagogy_metadata import enrich_node_metadata
 
 SUMMARY_BATCH_SIZE = 2
 MAX_PROMPT_TOKENS_DEFAULT = 3500
@@ -201,12 +202,31 @@ def get_nodes(structure):
             nodes.extend(get_nodes(item))
         return nodes
     
+def _child_list(node: dict) -> list:
+    return node.get("nodes") or node.get("children") or []
+
+
+def children_to_nodes(structure):
+    """Normalize exported `children` key back to in-memory `nodes` for processing."""
+    if isinstance(structure, dict):
+        ch = structure.pop("children", None)
+        if ch is not None and "nodes" not in structure:
+            structure["nodes"] = [children_to_nodes(c) for c in ch]
+        elif "nodes" in structure:
+            structure["nodes"] = [children_to_nodes(c) for c in structure["nodes"]]
+        return structure
+    if isinstance(structure, list):
+        return [children_to_nodes(n) for n in structure]
+    return structure
+
+
 def structure_to_list(structure):
     if isinstance(structure, dict):
         nodes = []
         nodes.append(structure)
-        if 'nodes' in structure:
-            nodes.extend(structure_to_list(structure['nodes']))
+        ch = _child_list(structure)
+        if ch:
+            nodes.extend(structure_to_list(ch))
         return nodes
     elif isinstance(structure, list):
         nodes = []
@@ -717,8 +737,9 @@ def add_node_text(node, pdf_pages):
         start_page = node.get('start_index')
         end_page = node.get('end_index')
         node['text'] = get_text_of_pdf_pages(pdf_pages, start_page, end_page)
-        if 'nodes' in node:
-            add_node_text(node['nodes'], pdf_pages)
+        ch = _child_list(node)
+        if ch:
+            add_node_text(ch, pdf_pages)
     elif isinstance(node, list):
         for index in range(len(node)):
             add_node_text(node[index], pdf_pages)
@@ -828,17 +849,40 @@ def _collect_child_summaries(node: dict) -> str:
     return "\n\n".join(parts)
 
 
+def _clean_child_blob(blob: str) -> str:
+    parts = []
+    for line in blob.splitlines():
+        line = re.sub(r"^#+\s*", "", line).strip()
+        if line and not line.startswith("•"):
+            parts.append(line)
+    text = " ".join(parts)
+    sents = re.split(r"(?<=[.!?])\s+", text)
+    good = [s for s in sents if len(s.split()) >= 6][:4]
+    return " ".join(good) if good else text[:800]
+
+
 async def _summarize_chapter_node(node, model=None, opt=None):
     """Synthesize chapter summary from child section summaries (not raw body)."""
     child_blob = _collect_child_summaries(node)
     raw = (node.get("text") or "")[:1500]
+    child_titles = [
+        (ch.get("title") or "").strip()
+        for ch in (node.get("nodes") or [])
+        if ch.get("title")
+    ]
 
-    # Short-circuit: garbled PDF glyph codes cannot be summarised — skip SLM entirely.
     if _is_garbled_ocr(raw) and not child_blob:
         title = node.get("title", "") or "Chapter"
         node["summary"] = f"This chapter covers: {title}."
-        node["keywords"] = []
+        node["keywords"] = node.get("keywords") or []
         node["_summary_source"] = "title_only_garbled"
+        enrich_node_metadata(node, child_titles)
+        return
+
+    if child_blob and len(child_blob) >= 200:
+        node["summary"] = _clean_child_blob(child_blob)
+        node["_summary_source"] = "chapter_children_concat"
+        enrich_node_metadata(node, child_titles)
         return
 
     if len(child_blob) >= 500:
@@ -848,37 +892,41 @@ async def _summarize_chapter_node(node, model=None, opt=None):
     if not prompt_body:
         prompt_body = raw[:1500] or node.get("title", "")
 
-    user_prompt = (
-        f"Chapter: {node.get('title', '')}\n\n"
-        f"Section summaries:\n{prompt_body}\n\n"
-        "Write an educational chapter summary (4-6 sentences) covering concepts taught, "
-        "relationships between ideas, and learning goals. Add 3-6 semantic_tags and 5-10 keywords."
-    )
-    system_prompt = (
-        "You summarize textbook chapters for downstream teaching agents. "
-        "Respond with ONLY valid JSON matching the schema."
-    )
-    try:
-        batch_result = await asyncio.to_thread(
-            generate_structured,
-            user_prompt,
-            SummaryBatch,
-            system_prompt,
-            stage="chapter_summary",
-            node_id=node.get("node_id"),
-            inference_options={"num_predict": getattr(opt, "summary_num_predict", 512) if opt else 512},
+    use_quality = getattr(opt, "quality", False) if opt else False
+    chapter_timeout = getattr(opt, "chapter_summary_timeout_seconds", 45) if opt else 45
+    num_predict = getattr(opt, "summary_num_predict", 384) if opt else 384
+
+    if use_quality:
+        user_prompt = (
+            f"Chapter: {node.get('title', '')}\n\n"
+            f"Section summaries:\n{prompt_body}\n\n"
+            "Write an educational chapter summary (4-6 sentences)."
         )
-        if batch_result.nodes:
-            ns = batch_result.nodes[0]
-            node["summary"] = ns.summary
-            node["keywords"] = ns.keywords or []
-            node["semantic_tags"] = getattr(ns, "semantic_tags", None) or []
-            node["_summary_source"] = "chapter_slm"
-            return
-    except Exception as exc:
-        logging.warning("chapter_summary failed for %s: %s", node.get("title"), exc)
+        system_prompt = (
+            "You summarize textbook chapters. Respond with ONLY valid JSON: "
+            '{"summary": "..."}'
+        )
+        try:
+            out = await asyncio.to_thread(
+                generate_structured,
+                user_prompt,
+                PlainSummary,
+                system_prompt,
+                stage="chapter_summary",
+                node_id=node.get("node_id"),
+                inference_options={"num_predict": num_predict},
+                timeout_seconds=chapter_timeout,
+            )
+            if out.summary and len(out.summary.strip()) >= 30:
+                node["summary"] = out.summary.strip()
+                node["_summary_source"] = "chapter_slm"
+                enrich_node_metadata(node, child_titles)
+                return
+        except Exception as exc:
+            logging.warning("chapter_summary failed for %s: %s", node.get("title"), exc)
+
     if child_blob:
-        node["summary"] = child_blob[:800]
+        node["summary"] = _clean_child_blob(child_blob)
         node["_summary_source"] = "chapter_children_concat"
     else:
         text = (node.get("text") or "")[:3000]
@@ -888,10 +936,12 @@ async def _summarize_chapter_node(node, model=None, opt=None):
                 node["summary"] = ext["summary"]
                 node["keywords"] = ext.get("keywords", [])
                 node["_summary_source"] = "extractive_chapter_fallback"
+                enrich_node_metadata(node, child_titles)
                 return
         title = node.get("title", "") or "Chapter"
         node["summary"] = f"This chapter covers: {title}."
         node["_summary_source"] = "title_only"
+    enrich_node_metadata(node, child_titles)
 
 
 async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, opt=None):
@@ -917,6 +967,7 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
             node["summary"] = ext["summary"]
             node["keywords"] = ext.get("keywords", [])
             node["_summary_source"] = "extractive"
+            enrich_node_metadata(node)
             try:
                 from .telemetry import PipelineMetrics
                 PipelineMetrics.record_extractive("summary_generation")
@@ -1028,6 +1079,7 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
                 node["summary"] = f"This section covers: {title}."
                 node["keywords"] = node.get("keywords", [])
                 node["_summary_source"] = "title_only"
+            enrich_node_metadata(node)
             try:
                 from .telemetry import PipelineMetrics
                 PipelineMetrics.record_title_only("summary_generation")
@@ -1065,7 +1117,7 @@ async def generate_summaries_for_structure(structure, model=None, max_nodes=None
         await _run_summary_batch(batch, batch_index, model=model, checkpoints=checkpoints, opt=opt)
 
     for ch in chapter_nodes:
-        if not ch.get("summary"):
+        if ch.get("nodes") or not ch.get("summary"):
             await _summarize_chapter_node(ch, model=model, opt=opt)
 
     for node in structure_to_list(structure):
@@ -1073,7 +1125,7 @@ async def generate_summaries_for_structure(structure, model=None, max_nodes=None
             ext = extractive.summarize(node.get("text", "") or node.get("title", ""), max_sentences=2)
             node["summary"] = ext.get("summary") or node.get("title", "") or "Section"
             node["keywords"] = node.get("keywords") or ext.get("keywords", [])
-            node.setdefault("semantic_tags", [])
+        enrich_node_metadata(node)
 
     if checkpoints:
         flat = [
@@ -1085,6 +1137,8 @@ async def generate_summaries_for_structure(structure, model=None, max_nodes=None
                 "summary": n.get("summary", ""),
                 "keywords": n.get("keywords", []),
                 "semantic_tags": n.get("semantic_tags", []),
+                "learning_objectives": n.get("learning_objectives", []),
+                "visualizable_elements": n.get("visualizable_elements", []),
                 "content_type": n.get("content_type"),
             }
             for n in structure_to_list(structure)
@@ -1174,7 +1228,8 @@ class ConfigLoader:
             | {
                 "model", "test_mode", "enable_gemini_fallback", "mode", "demo",
                 "resume", "benchmark", "no_summaries", "max_pages", "stage_models",
-                "summary_num_predict", "boundary_extend_max_pages",
+                "summary_num_predict", "boundary_extend_max_pages", "quality",
+                "chapter_summary_timeout_seconds",
             }
         )
         unknown_keys = set(user_dict) - known
@@ -1199,6 +1254,12 @@ class ConfigLoader:
             for k, v in profile.items():
                 if v is not None:
                     merged.setdefault(k, v)
+        validation = merged.get("validation") or {}
+        if isinstance(validation, dict):
+            if validation.get("fragment_summary_max_fragment_ratio") is not None:
+                merged["fragment_summary_max_fragment_ratio"] = float(
+                    validation["fragment_summary_max_fragment_ratio"]
+                )
         if merged.get("demo"):
             for k, v in (merged.get("demo_overrides") or {}).items():
                 if v is not None:

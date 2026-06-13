@@ -6,12 +6,72 @@ import re
 from collections import Counter
 from typing import Dict, List
 
+_RE_FIG_TABLE = re.compile(r"^(?:Fig\.?|Figure|Table)\b", re.IGNORECASE)
+_RE_DOTTED_BLANK = re.compile(r"\.{3,}")
+_RE_MOSTLY_SYMBOLS = re.compile(r"^[\d\s\W]+$")
+_VERB_LIKE = re.compile(
+    r"\b(?:is|are|was|were|has|have|had|can|will|may|show|shows|found|discovered|"
+    r"conducted|proposed|known|called|revolve|emit|pass|contain|determine|explain)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_noise_line(line: str) -> bool:
+    s = line.strip()
+    if not s or len(s) < 8:
+        return True
+    if _RE_FIG_TABLE.match(s):
+        return True
+    if _RE_DOTTED_BLANK.search(s):
+        return True
+    alpha = sum(1 for c in s if c.isalpha())
+    if alpha < 8:
+        return True
+    if _RE_MOSTLY_SYMBOLS.match(s.replace(" ", "")):
+        return True
+    if len(s) < 25 and not _VERB_LIKE.search(s):
+        return True
+    return False
+
+
+def _clean_for_summary(text: str) -> str:
+    if not text:
+        return ""
+    kept = []
+    for line in text.splitlines():
+        if _is_noise_line(line):
+            continue
+        kept.append(line.strip())
+    return "\n".join(kept)
+
+
+def _is_fragment_sentence(s: str) -> bool:
+    words = s.split()
+    if len(words) < 4:
+        return True
+    if not _VERB_LIKE.search(s):
+        return True
+    if s.isupper() and len(words) <= 8:
+        return True
+    return False
+
 
 def _split_sentences(text: str) -> List[str]:
     if not text:
         return []
     parts = re.split(r"(?<=[.!?])\s+|\n+", text.strip())
-    return [p.strip() for p in parts if len(p.strip()) > 10]
+    out = []
+    for p in parts:
+        p = p.strip()
+        if len(p) <= 10:
+            continue
+        if _is_fragment_sentence(p):
+            continue
+        alpha_tokens = re.findall(r"[a-zA-Z]{2,}", p)
+        if len(alpha_tokens) < 5:
+            continue
+        out.append(p)
+    return out
 
 
 def _top_keywords(text: str, n: int = 8) -> List[str]:
@@ -64,12 +124,13 @@ def summarize(
     max_sentences: int = 3,
     max_keywords: int = 8,
 ) -> Dict:
-    sents = _split_sentences(text)
+    cleaned = _clean_for_summary(text)
+    sents = _split_sentences(cleaned)
     if not sents:
         return {"summary": "", "keywords": [], "confidence": 0.0}
     scored = _textrank_scores(sents)
     picked = [s for _, s in scored[:max_sentences]]
     summary = " ".join(picked)
-    keywords = _top_keywords(text, n=max_keywords)
+    keywords = _top_keywords(cleaned or text, n=max_keywords)
     confidence = _score_confidence(sents, picked, keywords)
     return {"summary": summary, "keywords": keywords, "confidence": confidence}

@@ -832,6 +832,13 @@ async def process_large_node_recursively(node, page_list, opt=None, logger=None,
 
 # ── tree_parser: main pipeline orchestrator ───────────────────────────────────
 
+def _validation_kwargs(opt=None) -> dict:
+    ratio = getattr(opt, "fragment_summary_max_fragment_ratio", None) if opt else None
+    if ratio is not None:
+        return {"fragment_max_ratio": float(ratio)}
+    return {}
+
+
 async def tree_parser(page_list, opt, doc=None, logger=None, checkpoints=None, results_dir=None):
     resume = getattr(opt, "resume", False)
 
@@ -907,7 +914,7 @@ async def tree_parser(page_list, opt, doc=None, logger=None, checkpoints=None, r
     toc_tree = semantic_dedupe(toc_tree, logger=logger)
 
     # ── Phase 2: early validation + deterministic sub-section injection ──────
-    _early_val = validate_semantic_tree({"structure": toc_tree})
+    _early_val = validate_semantic_tree({"structure": toc_tree}, **_validation_kwargs(opt))
     if not _early_val["checks"].get("chapters_have_children"):
         print("[PageIndex] stage=subsection_injection action=run reason=no_children", flush=True)
         min_content = _min_chapter_content_page(toc_tree)
@@ -1143,7 +1150,8 @@ def page_index_main(doc, opt=None):
             order=[
                 "title", "structure", "level", "parent_id", "node_id",
                 "start_page", "end_page", "start_index", "end_index",
-                "summary", "keywords", "semantic_tags", "content_type", "text", "nodes",
+                "summary", "keywords", "semantic_tags", "learning_objectives",
+                "visualizable_elements", "grade_appropriateness", "content_type", "text", "nodes",
             ],
         )
         print("\n" + "=" * 72)
@@ -1151,7 +1159,7 @@ def page_index_main(doc, opt=None):
         print("=" * 72)
         print_tree(structure)
         result = {"doc_name": pdf_name, "structure": structure}
-        validation = validate_semantic_tree(result, logger=logger)
+        validation = validate_semantic_tree(result, logger=logger, **_validation_kwargs(opt))
 
         # ── Phase 2: final repair pass if hierarchy is still flat ───────────
         needs_repair = (
@@ -1169,7 +1177,7 @@ def page_index_main(doc, opt=None):
                 structure, page_list, logger=logger, min_content_page=min_content,
             )
             if added:
-                validation = validate_semantic_tree(result, logger=logger)
+                validation = validate_semantic_tree(result, logger=logger, **_validation_kwargs(opt))
                 print(
                     f"[PageIndex] stage=final_repair action=complete "
                     f"children_added={added} passed={validation['passed']}",
@@ -1197,7 +1205,7 @@ def page_index_main(doc, opt=None):
         _write_output_artifacts(result, results_dir, pdf_name, skip_summaries)
 
     if "validation_warnings" not in result and result.get("structure"):
-        validation = validate_semantic_tree(result, logger=logger)
+        validation = validate_semantic_tree(result, logger=logger, **_validation_kwargs(opt))
         if not validation["passed"]:
             result["validation_warnings"] = validation["failures"]
         checkpoints.save("semantic_validation.json", validation)
