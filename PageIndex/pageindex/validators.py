@@ -15,6 +15,11 @@ TITLE_ONLY_SUMMARY_RE = re.compile(
     re.IGNORECASE,
 )
 
+DOUBLED_TITLE_RE = re.compile(
+    r"^([A-Za-z]{3,30})\1$",
+    re.IGNORECASE,
+)
+
 
 def _walk_nodes(structure: List[dict]) -> List[dict]:
     nodes: List[dict] = []
@@ -84,7 +89,9 @@ def validate_semantic_tree(result: dict, logger=None) -> dict:
 
     checks["no_minimal_success"] = result.get("fallback") != "minimal_success"
     checks["no_junk_headings"] = not any(
-        JUNK_TITLE_RE.match((n.get("title") or "").strip()) for n in nodes
+        JUNK_TITLE_RE.match((n.get("title") or "").strip())
+        or DOUBLED_TITLE_RE.match((n.get("title") or "").strip().replace(" ", ""))
+        for n in nodes
     )
 
     # Adaptive threshold: at least (chapter_count + 1) nodes or 4, whichever is smaller threshold

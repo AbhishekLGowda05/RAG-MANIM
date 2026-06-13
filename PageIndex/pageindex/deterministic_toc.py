@@ -34,11 +34,70 @@ TOC_LINE_SIMPLE = re.compile(
 _RE_NUM_ONLY = re.compile(r"^\s*(\d+(?:\.\d+)*)\s*$")
 _RE_PAGE_ONLY = re.compile(r"^\s*(\d{1,4})\s*$")
 _RE_TOC_HEADER = re.compile(r"\bTABLE\s+OF\s+CONTENTS\b", re.IGNORECASE)
+_RE_CONTENTS_HEADER = re.compile(r"contents", re.IGNORECASE)
 
 _JUNK_TITLES = re.compile(
     r"^(?:PHYSICS|CBSE\s+Grade|NCERT|Visual\s+AI\s+Teaching|Physics\s+for\s+Everyone|Grade\s+\d+)",
     re.IGNORECASE,
 )
+
+_RE_DOUBLED_DOTS = re.compile(r"(\.{2,})\s+\1")
+_RE_DOUBLED_STRUCT_PREFIX = re.compile(r"^(\d+)\.\1\.")
+
+
+def _dedup_repeated_half(text: str) -> str:
+    """If text is an exact doubled string (e.g. 'Contentscontents'), return first half."""
+    t = text.strip()
+    if len(t) >= 6 and len(t) % 2 == 0:
+        half = len(t) // 2
+        if t[:half].lower() == t[half:].lower():
+            return t[:half]
+    return t
+
+
+def _dedup_toc_line(line: str) -> str:
+    """Normalize one TOC line with doubled-text PDF artefacts (SCERT Chemistry layout)."""
+    if not line.strip():
+        return line
+
+    line = _RE_DOUBLED_DOTS.sub(r"\1", line)
+
+    stripped = line.strip()
+    if stripped and not re.search(r"\d", stripped):
+        line = _dedup_repeated_half(stripped)
+
+    line = _RE_DOUBLED_STRUCT_PREFIX.sub(r"\1.", line)
+
+    m = re.match(r"^(\s*)(\d+(?:\.\d+)*\.)\s*(.*)$", line)
+    if m:
+        prefix, num_part, rest = m.group(1), m.group(2), m.group(3)
+        page_m = re.search(r"([\.\s]{2,}|\t+)\s*(\d{1,4})\s*$", rest)
+        if page_m:
+            title_part = rest[: page_m.start()].strip()
+            suffix = rest[page_m.start() :]
+            title_part = _dedup_repeated_half(title_part)
+            if len(title_part) >= 6:
+                half = len(title_part) // 2
+                if title_part[:half].lower() == title_part[half:].lower():
+                    title_part = title_part[:half]
+            line = f"{prefix}{num_part} {title_part}{suffix}"
+        else:
+            rest_dedup = _dedup_repeated_half(rest.strip())
+            line = f"{prefix}{num_part} {rest_dedup}"
+
+    line = re.sub(r"(\d{1,3})\1\s*$", r"\1", line)
+    line = re.sub(r"^(\s*)(\d+(?:\.\d+)*)\.(?=[A-Za-z])", r"\1\2. ", line)
+    return line
+
+
+def _dedup_toc_text(text: str) -> str:
+    return "\n".join(_dedup_toc_line(ln) for ln in text.splitlines())
+
+
+def _filter_entries_by_max_pages(entries: List[dict], max_pages: int) -> List[dict]:
+    if max_pages <= 0:
+        return entries
+    return [e for e in entries if (e.get("page_number") or 0) <= max_pages]
 
 
 def _indent_level(indent: str) -> int:
@@ -155,29 +214,36 @@ def _parse_layout_c_title_page(text: str) -> List[dict]:
     return entries
 
 
-def parse_toc(text: str) -> Tuple[List[dict], float]:
+def parse_toc(text: str, max_pages: int = 9999) -> Tuple[List[dict], float]:
+    text = _dedup_toc_text(text)
     best_entries: List[dict] = []
     best_confidence = 0.0
     for parser in (_parse_layout_a, _parse_layout_b_vertical_triplet, _parse_layout_c_title_page):
-        entries = parser(text)
+        entries = _filter_entries_by_max_pages(parser(text), max_pages)
         if len(entries) < 2:
             continue
-        confidence = _toc_confidence(entries, text)
+        confidence = _toc_confidence(entries, text, max_pages=max_pages)
         if confidence > best_confidence or len(entries) > len(best_entries):
             best_entries = entries
             best_confidence = confidence
+    best_entries = _filter_entries_by_max_pages(best_entries, max_pages)
     return best_entries, best_confidence
 
 
 def find_toc_page_index(page_texts: List[str], max_scan: int = 20) -> Optional[int]:
-    """Return 0-based index of page containing TABLE OF CONTENTS."""
+    """Return 0-based index of page containing TABLE OF CONTENTS or CONTENTS."""
     for i, text in enumerate(page_texts[:max_scan]):
-        if text and _RE_TOC_HEADER.search(text):
+        if not text:
+            continue
+        if _RE_TOC_HEADER.search(text):
+            return i
+        if _RE_CONTENTS_HEADER.search(text[:800]):
             return i
     return None
 
 
-def _toc_confidence(entries: List[dict], text: str) -> float:
+def _toc_confidence(entries: List[dict], text: str, max_pages: int = 9999) -> float:
+    entries = _filter_entries_by_max_pages(entries, max_pages)
     if len(entries) < 3:
         return 0.0
     lines = [ln for ln in text.splitlines() if ln.strip()]

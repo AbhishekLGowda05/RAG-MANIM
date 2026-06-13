@@ -13,11 +13,47 @@ _RE_NUMBERED_HEADING = re.compile(
     r"^\s*(\d+\.\d+(?:\.\d+)?)\s+([A-Z][^\n]{3,80})\s*$",
     re.MULTILINE,
 )
-# All-caps section headings: "HEATING EFFECT OF CURRENT"
+# All-caps section headings: "HEATING EFFECT OF CURRENT" (single line only — no \n in match)
 _RE_ALLCAPS_HEADING = re.compile(
-    r"^\s*([A-Z][A-Z\s\-]{5,60})\s*$",
+    r"^\s*([A-Z][A-Z \-]{5,60})\s*$",
     re.MULTILINE,
 )
+
+_FRONT_MATTER_TITLE_RE = re.compile(
+    r"^(?:Chemistry|Part|Standard|Contents|Pledge|Anthem|Preface)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_junk_heading(title: str) -> bool:
+    """Reject headings that are front-matter noise, abbreviations, or symbol fragments."""
+    if not title or "\n" in title:
+        return True
+    if len(title) < 4:
+        return True
+    compact = re.sub(r"\s+", "", title)
+    if re.match(r"^([A-Za-z]{3,30})\1$", compact, re.IGNORECASE):
+        return True
+    words = title.split()
+    if words and all(len(w) <= 4 for w in words):
+        return True
+    for w in words:
+        if len(w) >= 4:
+            from collections import Counter
+            counts = Counter(w.lower())
+            if counts and counts.most_common(1)[0][1] / len(w) > 0.6:
+                return True
+    if re.search(r"(.)\1{3,}", title):
+        return True
+    if _FRONT_MATTER_TITLE_RE.match(title.strip()):
+        return True
+    alpha = title.replace(" ", "").replace("-", "")
+    if alpha.isupper() and len(set(alpha.lower())) <= 5:
+        return True
+    letters = sum(1 for c in title if c.isalpha())
+    if letters and (len(title) - letters) / len(title) >= 0.5:
+        return True
+    return False
 
 _RE_HEADING = re.compile(
     r"^\s*(?:CHAPTER\s+\d+|\d+(?:\.\d+)+\s+[A-Z]|[A-Z][A-Z\s]{4,})\s*$",
@@ -43,6 +79,7 @@ def extract_section_headings_from_pages(
     end_page: int,
     parent_structure: str,
     min_heading_len: int = 5,
+    min_content_page: int = 1,
 ) -> List[dict]:
     """Deterministically extract sub-section headings from a chapter's pages.
 
@@ -54,6 +91,8 @@ def extract_section_headings_from_pages(
     seen: set = set()
 
     for phys in range(start_page, min(end_page + 1, start_page + len(page_list))):
+        if phys < min_content_page:
+            continue
         idx = phys - 1
         if idx < 0 or idx >= len(page_list):
             break
@@ -65,7 +104,7 @@ def extract_section_headings_from_pages(
         for m in _RE_NUMBERED_HEADING.finditer(text):
             num_str, title = m.group(1).strip(), m.group(2).strip()
             key = title.lower()[:40]
-            if key in seen or len(title) < min_heading_len:
+            if key in seen or len(title) < min_heading_len or _is_junk_heading(title):
                 continue
             seen.add(key)
             sections.append({
@@ -80,7 +119,7 @@ def extract_section_headings_from_pages(
         if not any(s["physical_index"] == phys for s in sections):
             for m in _RE_ALLCAPS_HEADING.finditer(text):
                 title = m.group(1).strip().title()  # normalise to Title Case
-                if len(title) < min_heading_len:
+                if len(title) < min_heading_len or _is_junk_heading(title):
                     continue
                 key = title.lower()[:40]
                 if key in seen:
@@ -106,6 +145,7 @@ def inject_subsections_into_tree(
     toc_tree: List[dict],
     page_list: list,
     logger=None,
+    min_content_page: int = 1,
 ) -> int:
     """Add child nodes to flat chapter nodes using deterministic heading detection.
 
@@ -122,7 +162,8 @@ def inject_subsections_into_tree(
             continue
 
         children_raw = extract_section_headings_from_pages(
-            page_list, int(start), int(end), parent_structure=struct
+            page_list, int(start), int(end), parent_structure=struct,
+            min_content_page=min_content_page,
         )
         if not children_raw:
             continue

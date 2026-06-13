@@ -420,6 +420,14 @@ def _dedupe_toc_entries(entries):
     return out
 
 
+def _min_chapter_content_page(nodes: list) -> int:
+    """Earliest start page among chapter nodes — skips front-matter during subsection scan."""
+    chapters = [n for n in nodes if n.get("content_type") == "chapter"]
+    if not chapters:
+        return 1
+    return min(n.get("start_index") or n.get("start_page") or 1 for n in chapters)
+
+
 _REPEATED_HEADER_RE = re.compile(r"(?:^|\n)([^\n]{0,120})\n(?:.*\n)*?\1\n", re.MULTILINE)
 
 
@@ -565,7 +573,7 @@ def find_toc_pages(start_page_index, page_list, opt, logger=None, results_dir=No
         abs_idx = start_page_index + toc_anchor
         toc_page_list = [abs_idx]
         full_toc_text = page_list[abs_idx][0] or ""
-        det_entries, det_conf = deterministic_parse_toc(full_toc_text)
+        det_entries, det_conf = deterministic_parse_toc(full_toc_text, max_pages=len(page_list))
         if det_entries and det_conf >= min_conf:
             if logger:
                 logger.info(
@@ -583,7 +591,7 @@ def find_toc_pages(start_page_index, page_list, opt, logger=None, results_dir=No
 
     toc_page_list = list(range(start_page_index, end))
     batch_text = _pages_text(page_list, start_page_index, end, chars_limit=chars_limit)
-    det_entries, det_conf = deterministic_parse_toc(batch_text)
+    det_entries, det_conf = deterministic_parse_toc(batch_text, max_pages=len(page_list))
     if det_entries and det_conf >= min_conf:
         if logger:
             logger.info(
@@ -902,7 +910,10 @@ async def tree_parser(page_list, opt, doc=None, logger=None, checkpoints=None, r
     _early_val = validate_semantic_tree({"structure": toc_tree})
     if not _early_val["checks"].get("chapters_have_children"):
         print("[PageIndex] stage=subsection_injection action=run reason=no_children", flush=True)
-        added = inject_subsections_into_tree(toc_tree, page_list, logger=logger)
+        min_content = _min_chapter_content_page(toc_tree)
+        added = inject_subsections_into_tree(
+            toc_tree, page_list, logger=logger, min_content_page=min_content,
+        )
         if added:
             print(f"[PageIndex] stage=subsection_injection action=complete children_added={added}", flush=True)
         else:
@@ -1153,7 +1164,10 @@ def page_index_main(doc, opt=None):
                 f"failures={validation['failures']}",
                 flush=True,
             )
-            added = inject_subsections_into_tree(structure, page_list, logger=logger)
+            min_content = _min_chapter_content_page(structure)
+            added = inject_subsections_into_tree(
+                structure, page_list, logger=logger, min_content_page=min_content,
+            )
             if added:
                 validation = validate_semantic_tree(result, logger=logger)
                 print(
