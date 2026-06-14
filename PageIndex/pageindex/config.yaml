@@ -17,6 +17,9 @@ if_add_node_summary: "yes"
 if_add_doc_description: "no"
 if_add_node_text: "no"
 
+# PDF text extractor: PyPDF2 (default) or PyMuPDF for merged/scanned PDFs
+pdf_parser: "PyPDF2"
+
 # Default execution mode (overridden by --cpu / --gpu CLI flags)
 mode: "cpu"
 
@@ -87,14 +90,17 @@ gpu_mode:
   boundary_extend_max_pages: 2
 
 # Quality mode — activated by --quality CLI flag
-# Overrides chapter_summary and toc_index_extractor to a larger, schema-strict model.
+# Local fallback is always qwen2.5:3b; heavy lifting uses NVIDIA NIM when configured.
 quality_mode:
-  chapter_summary: "ollama/qwen2.5-coder:7b"
-  toc_index_extractor: "ollama/qwen2.5-coder:7b"
-  no_toc_outline: "ollama/qwen2.5-coder:7b"
+  chapter_summary: "ollama/qwen2.5:3b"
+  toc_index_extractor: "ollama/qwen2.5:3b"
+  no_toc_outline: "ollama/qwen2.5:3b"
   inference_timeout_seconds: 360
   max_prompt_tokens: 5500
   max_context_tokens: 8192
+
+# Local Ollama model used after NVIDIA failure in quality / max-quality modes.
+local_fallback_model: "ollama/qwen2.5:3b"
 
 # model_not_found_behavior:
 #   "warn"  — log a pull command, use any installed fallback (default, lenient)
@@ -113,3 +119,75 @@ demo_overrides:
   toc_batch_timeout_seconds: 120
   max_prompt_tokens: 3500
   max_context_tokens: 4096
+
+# Enterprise mode — activated by --max-quality CLI flag
+# Inference order: NVIDIA NIM (nvidia_stages) → local qwen2.5:3b
+max_quality_mode:
+  inference_timeout_seconds: 600
+  toc_batch_timeout_seconds: 600
+  chapter_summary_timeout_seconds: 300
+  subsection_llm_timeout_seconds: 1200
+  toc_pages_per_batch: 1
+  summary_nodes_per_batch: 1
+  toc_page_chars_limit: 6000
+  toc_num_predict: 2048
+  summary_num_predict: 768
+  max_prompt_tokens: 12000
+  max_context_tokens: 16384
+  max_retries: 3
+  recursive_depth: 2
+  tree_max_depth: 8
+  min_heading_len: 10
+  junk_filter_strict: true
+  hybrid_nvidia_enabled: true
+  nvidia_first: true
+  nvidia_stages:
+    - toc_detection
+    - chapter_summary
+    - no_toc_outline
+  nvidia_route_after_timeouts: 0
+
+# NVIDIA NIM settings for hybrid local → cloud fallback under --max-quality
+nvidia:
+  primary_model: "meta/llama-3.3-70b-instruct"
+  fallback_model: "nvidia/nemotron-3-nano-30b-a3b"
+  temperature: 0.1
+  max_tokens: 4096
+  timeout_seconds: 300
+  use_guided_json: true
+
+# Maximum accuracy — activated by --quality-level high (implies --max-quality)
+# Inference order: NVIDIA NIM → qwen2.5:3b (no 7b). Deterministic TOC + hybrid subsections.
+high_quality_mode:
+  inference_timeout_seconds: 900
+  toc_batch_timeout_seconds: 900
+  chapter_summary_timeout_seconds: 600
+  subsection_llm_timeout_seconds: 1200
+  toc_pages_per_batch: 1
+  summary_nodes_per_batch: 1
+  toc_page_chars_limit: 8000
+  toc_num_predict: 4096
+  summary_num_predict: 1024
+  max_prompt_tokens: 16000
+  max_context_tokens: 32768
+  max_retries: 4
+  recursive_depth: 3
+  tree_max_depth: 8
+  min_heading_len: 6
+  junk_filter_strict: true
+  skip_deterministic_toc: false
+  force_llm_summaries: true
+  force_llm_subsections: true
+  force_title_polish: true
+  slm_fallback_ratio_max: 1.0
+  toc_deterministic_min_confidence: 0.55
+  extractive_min_confidence: 0.45
+  hybrid_nvidia_enabled: true
+  nvidia_first: true
+  nvidia_stages:
+    - toc_detection
+    - chapter_summary
+    - no_toc_outline
+    - summary_generation
+    - title_cleanup
+  nvidia_route_after_timeouts: 0

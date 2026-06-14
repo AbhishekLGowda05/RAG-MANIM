@@ -130,8 +130,15 @@ if __name__ == "__main__":
                       help='Re-index even if a cached structure.json already exists for this PDF')
     parser.add_argument('--quality', action='store_true', default=False,
                       help='Quality mode: route chapter_summary and outline stages to qwen2.5-coder:7b')
+    parser.add_argument('--max-quality', action='store_true', default=False,
+                      help='Enterprise mode: max quality, long timeouts, NVIDIA hybrid fallback')
+    parser.add_argument('--quality-level', type=str, default=None,
+                      choices=['fast', 'balanced', 'high'],
+                      help='Quality tier: fast (default), balanced (--max-quality default), high (max accuracy)')
     parser.add_argument('--fail-on-missing-model', action='store_true', default=False,
                       help='Exit immediately if the configured Ollama model is not pulled')
+    parser.add_argument('--pdf-parser', type=str, default=None, choices=['PyPDF2', 'PyMuPDF'],
+                      help='PDF text extractor (PyMuPDF for merged/scanned PDFs that break PyPDF2)')
     parser.add_argument('--if-thinning', type=str, default='no',
                       help='Whether to apply tree thinning for markdown (markdown only)')
     parser.add_argument('--thinning-threshold', type=int, default=5000,
@@ -175,6 +182,10 @@ if __name__ == "__main__":
                 effective_max_pages = 5
                 print(f"[PageIndex] demo mode: auto-limiting to {effective_max_pages} pages", flush=True)
 
+            quality_level = args.quality_level
+            if args.max_quality and not quality_level:
+                quality_level = 'balanced'
+
             user_opt = {
                 'mode': mode,
                 'demo': demo,
@@ -192,10 +203,25 @@ if __name__ == "__main__":
                 'if_add_node_summary': 'no' if args.no_summaries else args.if_add_node_summary,
                 'if_add_doc_description': args.if_add_doc_description,
                 'if_add_node_text': args.if_add_node_text,
+                'pdf_parser': args.pdf_parser,
+                'max_quality': True if (args.max_quality or quality_level == 'high') else None,
+                'quality': True if (args.quality or args.max_quality or quality_level in ('balanced', 'high')) else None,
+                'quality_level': quality_level,
             }
             opt = ConfigLoader().load({k: v for k, v in user_opt.items() if v is not None})
 
-            if args.quality:
+            effective_ql = getattr(opt, 'quality_level', quality_level or 'fast')
+            if effective_ql == 'high':
+                print(
+                    "[PageIndex] quality-level=high: NVIDIA→qwen2.5:3b, hybrid subsections, title polish",
+                    flush=True,
+                )
+            elif args.max_quality or effective_ql == 'balanced':
+                print(
+                    "[PageIndex] max-quality / balanced: NVIDIA NIM first, local fallback qwen2.5:3b",
+                    flush=True,
+                )
+            elif args.quality:
                 from pageindex.model_router import set_quality_mode
                 # Pull quality overrides from config if present
                 quality_overrides = getattr(opt, 'quality_mode', None)
@@ -212,7 +238,7 @@ if __name__ == "__main__":
                             setattr(opt, key, int(val))
                 else:
                     set_quality_mode(enabled=True)
-                print("[PageIndex] quality mode: chapter_summary / outline → qwen2.5-coder:7b", flush=True)
+                print("[PageIndex] quality mode: NVIDIA→qwen2.5:3b for heavy stages", flush=True)
 
             toc_with_page_number = page_index_main(pdf_path, opt)
             print("\n" + "=" * 72)

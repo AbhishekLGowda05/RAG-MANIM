@@ -163,12 +163,14 @@ def _resolve_available_model(preferred: str, fail_fast: bool = False) -> str:
 
     def _rank(name: str) -> tuple:
         n = name.lower()
-        # Prefer qwen models since they are configured as default
+        # Prefer qwen2.5:3b as local fallback — avoid heavy 7b/coder models.
         family = 9
-        if "qwen2.5-coder" in n:
+        if "qwen2.5:3b" in n or "qwen2.5:3" in n:
             family = 0
-        elif "qwen2.5" in n:
+        elif "qwen2.5" in n and "coder" not in n:
             family = 1
+        elif "qwen2.5-coder" in n or "qwen2.5-coder" in n:
+            family = 8
         elif "qwen" in n:
             family = 2
         elif "gemma3" in n:
@@ -197,6 +199,9 @@ def _resolve_available_model(preferred: str, fail_fast: bool = False) -> str:
     return chosen
 
 
+_stage_timeout_counts: Dict[str, int] = {}
+
+
 def configure_from_opt(opt: Any) -> None:
     """Apply generation_model and limits from ConfigLoader opt namespace."""
     global OLLAMA_MODEL, FALLBACK_MODEL, TOKEN_COUNT_MODEL, MAX_PROMPT_TOKENS
@@ -205,6 +210,14 @@ def configure_from_opt(opt: Any) -> None:
 
     fail_fast = str(getattr(opt, "model_not_found_behavior", "warn")).lower() == "fail"
     gen = getattr(opt, "generation_model", None) or os.environ.get("OLLAMA_MODEL")
+    ql = getattr(opt, "quality_level", "fast")
+    max_quality = bool(getattr(opt, "max_quality", False))
+    local_fb = getattr(opt, "local_fallback_model", None)
+    if (max_quality or ql == "high") and local_fb:
+        gen = local_fb
+    elif (max_quality or ql == "high"):
+        from .model_router import LOCAL_FALLBACK_MODEL
+        gen = LOCAL_FALLBACK_MODEL
     if gen:
         preferred = _normalize_ollama_model(gen)
         OLLAMA_MODEL = _resolve_available_model(preferred, fail_fast=fail_fast)
@@ -240,11 +253,58 @@ def configure_from_opt(opt: Any) -> None:
     if fb_flag is not None:
         ENABLE_GEMINI_FALLBACK = str(fb_flag).lower() in ("yes", "true", "1")
 
-    from .model_router import configure_stage_models
+    from .model_router import (
+        configure_stage_models,
+        set_max_quality_mode,
+        set_quality_mode,
+        set_high_quality_mode,
+    )
+    from .quality_policy import configure_quality_level, reset_path_stats
+
+    configure_quality_level(getattr(opt, "quality_level", "fast"))
+    reset_path_stats()
 
     configure_stage_models(getattr(opt, "stage_models", None))
 
-    global _resolved_models
+    ql = getattr(opt, "quality_level", "fast")
+    max_quality = bool(getattr(opt, "max_quality", False))
+    if ql == "high":
+        set_high_quality_mode(enabled=True)
+        set_quality_mode(enabled=True)
+        set_max_quality_mode(
+            enabled=True,
+            nvidia_stages=list(getattr(opt, "nvidia_stages", None) or []),
+            route_after_timeouts=int(getattr(opt, "nvidia_route_after_timeouts", 0) or 0),
+            nvidia_first=bool(getattr(opt, "nvidia_first", True)),
+        )
+    elif max_quality:
+        nvidia_stages = getattr(opt, "nvidia_stages", None)
+        route_after = getattr(opt, "nvidia_route_after_timeouts", 0)
+        set_max_quality_mode(
+            enabled=True,
+            nvidia_stages=list(nvidia_stages) if nvidia_stages else None,
+            route_after_timeouts=int(route_after or 0),
+            nvidia_first=bool(getattr(opt, "nvidia_first", True)),
+        )
+        quality_cfg = getattr(opt, "quality_mode", None)
+        if isinstance(quality_cfg, dict):
+            stage_overrides = {
+                k: v for k, v in quality_cfg.items()
+                if not k.startswith("inference_") and not k.startswith("max_")
+            }
+            set_quality_mode(enabled=True, quality_overrides=stage_overrides or None)
+        else:
+            set_quality_mode(enabled=True)
+    else:
+        set_max_quality_mode(enabled=False)
+        set_high_quality_mode(enabled=False)
+
+    from .nvidia_hybrid import configure_nvidia
+
+    configure_nvidia(opt)
+
+    global _stage_timeout_counts, _resolved_models
+    _stage_timeout_counts = {}
     _resolved_models = {}
     _model_ready = False
     logger.info(
@@ -582,7 +642,7 @@ def generate_structured(
     timeout_seconds: Optional[int] = None,
     fail_fast_json: bool = False,
 ) -> T:
-    global _CURRENT_STAGE
+    global _CURRENT_STAGE, _stage_timeout_counts
     if max_retries is None:
         max_retries = MAX_RETRIES
     fb_model = fallback_model or FALLBACK_MODEL
@@ -601,10 +661,92 @@ def generate_structured(
         ctx.append(f"node={node_id}")
     ctx_str = " ".join(ctx)
     _CURRENT_STAGE = stage or "inference"
-    from .model_router import model_for_stage
+    from .model_router import (
+        model_for_stage,
+        is_max_quality,
+        nvidia_stage_eligible,
+        route_after_timeouts,
+        nvidia_first_enabled,
+        local_fallback_model,
+    )
+    from .nvidia_hybrid import (
+        nvidia_available,
+        nvidia_generate_raw,
+        nvidia_auth_failed_recently,
+        reset_nvidia_escalation_flag,
+        NvidiaAuthError,
+        NvidiaUnavailableError,
+    )
+
+    reset_nvidia_escalation_flag()
 
     _ensure_model_once()
-    active_model = _ensure_model_for(model_for_stage(_CURRENT_STAGE, OLLAMA_MODEL))
+    routed = model_for_stage(_CURRENT_STAGE, OLLAMA_MODEL)
+    active_model = _ensure_model_for(routed)
+    if is_max_quality():
+        active_model = _ensure_model_for(
+            _normalize_ollama_model(local_fallback_model())
+        )
+
+    def _complete_from_raw(raw: str, tok_est: int, t0: float, *, local: bool) -> T:
+        from .json_repair import repair_and_parse
+        print(f"[PageIndex] parse_start: stage={stage} batch={batch_index} raw_chars={len(raw)}", flush=True)
+        validated, _ = repair_and_parse(raw, schema)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        _runtime_summary.record_call(local=local, tokens=tok_est, latency_ms=elapsed_ms)
+        try:
+            from .telemetry import PipelineMetrics
+            PipelineMetrics.record_inference(_CURRENT_STAGE, tok_est, elapsed_ms, True)
+            PipelineMetrics.stage_end(_CURRENT_STAGE)
+        except Exception:
+            pass
+        print(
+            f"[PageIndex] parse_success: stage={stage} batch={batch_index} "
+            f"inference_ms={elapsed_ms:.0f}",
+            flush=True,
+        )
+        return validated
+
+    # Quality modes: NVIDIA NIM first, then local qwen2.5:3b (never 7b).
+    if (
+        nvidia_first_enabled()
+        and nvidia_stage_eligible(stage)
+        and nvidia_available()
+        and not nvidia_auth_failed_recently()
+    ):
+        try:
+            tok_est = estimate_prompt_tokens(
+                original_prompt, system_prompt, schema, token_count_model=TOKEN_COUNT_MODEL
+            )
+            print(
+                f"[PageIndex] stage={stage} batch={batch_index} action=nvidia_first "
+                f"est_tokens={tok_est}",
+                flush=True,
+            )
+            t0 = time.perf_counter()
+            raw = nvidia_generate_raw(
+                original_prompt, system_prompt, schema, stage=stage
+            )
+            return _complete_from_raw(raw, tok_est, t0, local=False)
+        except (NvidiaAuthError, NvidiaUnavailableError, RuntimeError) as nvidia_exc:
+            print(
+                f"[PageIndex] nvidia_fallback_to_local: stage={stage} "
+                f"local_model={active_model!r} reason={nvidia_exc}",
+                flush=True,
+            )
+            logger.warning(
+                "NVIDIA unavailable for %s — falling back to local %r: %s",
+                ctx_str,
+                active_model,
+                nvidia_exc,
+            )
+        except Exception as nvidia_exc:
+            print(
+                f"[PageIndex] nvidia_fallback_to_local: stage={stage} "
+                f"local_model={active_model!r} reason={type(nvidia_exc).__name__}",
+                flush=True,
+            )
+            logger.warning("NVIDIA failed for %s: %s", ctx_str, nvidia_exc)
 
     try:
         from .telemetry import PipelineMetrics
@@ -681,15 +823,54 @@ def generate_structured(
             raise
         except TimeoutError as e:
             last_error = e
-            logger.warning(
-                "retry_reason: timeout %s — propagating to caller for batch shrink",
-                ctx_str,
-            )
             try:
                 from .telemetry import PipelineMetrics
                 PipelineMetrics.record_timeout(_CURRENT_STAGE)
             except Exception:
                 pass
+
+            # Legacy path: escalate to NVIDIA after local timeout when nvidia_first is off.
+            if (
+                not nvidia_first_enabled()
+                and is_max_quality()
+                and nvidia_stage_eligible(stage)
+                and nvidia_available()
+                and not nvidia_auth_failed_recently()
+            ):
+                stage_key = stage or "inference"
+                _stage_timeout_counts[stage_key] = _stage_timeout_counts.get(stage_key, 0) + 1
+                if _stage_timeout_counts[stage_key] >= max(1, route_after_timeouts()):
+                    print(
+                        f"[PageIndex] nvidia_escalation_trigger: stage={stage} "
+                        f"local_timeouts={_stage_timeout_counts[stage_key]}",
+                        flush=True,
+                    )
+                    try:
+                        t0 = time.perf_counter()
+                        tok_est = estimate_prompt_tokens(
+                            original_prompt,
+                            system_prompt,
+                            schema,
+                            token_count_model=TOKEN_COUNT_MODEL,
+                        )
+                        raw = nvidia_generate_raw(
+                            original_prompt,
+                            system_prompt,
+                            schema,
+                            stage=stage,
+                        )
+                        return _complete_from_raw(raw, tok_est, t0, local=False)
+                    except Exception as nvidia_exc:
+                        logger.warning(
+                            "nvidia_escalation failed %s: %s — falling back to caller shrink",
+                            ctx_str,
+                            nvidia_exc,
+                        )
+
+            logger.warning(
+                "retry_reason: timeout %s — propagating to caller for batch shrink",
+                ctx_str,
+            )
             raise
         except (json.JSONDecodeError, ValidationError, ValueError) as e:
             last_error = e

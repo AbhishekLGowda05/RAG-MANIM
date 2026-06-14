@@ -54,6 +54,19 @@ class SummaryBatch(BaseModel):
     nodes: List[NodeSummary]
 
 
+class TitlePolishItem(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    node_id: str
+    title: str
+
+
+class TitlePolishBatch(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    nodes: List[TitlePolishItem]
+
+
 class DocDescription(BaseModel):
     model_config = ConfigDict(strict=True)
 

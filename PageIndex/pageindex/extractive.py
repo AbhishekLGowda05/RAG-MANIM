@@ -6,9 +6,24 @@ import re
 from collections import Counter
 from typing import Dict, List
 
+from .heading_hints import (
+    _RE_MCQ_INLINE,
+    _RE_MCQ_OPTION,
+    _RE_NUMERIC_ANSWER,
+    _RE_SOLUTION_PHRASE,
+    _RE_WATERMARK,
+    is_junk_heading,
+)
+
 _RE_FIG_TABLE = re.compile(r"^(?:Fig\.?|Figure|Table)\b", re.IGNORECASE)
 _RE_DOTTED_BLANK = re.compile(r"\.{3,}")
 _RE_MOSTLY_SYMBOLS = re.compile(r"^[\d\s\W]+$")
+_RE_PAGE_MARKER = re.compile(r"^---\s*PAGE\s+\d+\s*---$", re.IGNORECASE)
+_RE_ANSWER_LINE = re.compile(
+    r"^\s*(?:\d+\.\s*)?\(?[a-dA-D]\)?[\s.:]|"
+    r"^\s*\d+(?:\.\d+)?\s*(?:cm|m|mm|V|A|W|s|Hz|N|J)\b",
+    re.IGNORECASE,
+)
 _VERB_LIKE = re.compile(
     r"\b(?:is|are|was|were|has|have|had|can|will|may|show|shows|found|discovered|"
     r"conducted|proposed|known|called|revolve|emit|pass|contain|determine|explain)\b",
@@ -20,14 +35,29 @@ def _is_noise_line(line: str) -> bool:
     s = line.strip()
     if not s or len(s) < 8:
         return True
+    if _RE_PAGE_MARKER.match(s):
+        return True
     if _RE_FIG_TABLE.match(s):
         return True
     if _RE_DOTTED_BLANK.search(s):
+        return True
+    if _RE_WATERMARK.search(s):
+        return True
+    if _RE_ANSWER_LINE.match(s):
+        return True
+    if _RE_MCQ_OPTION.match(s):
+        return True
+    if _RE_MCQ_INLINE.fullmatch(s.strip("(). ")):
+        return True
+    is_junk, _ = is_junk_heading(s, strict=False)
+    if is_junk and len(s.split()) <= 12:
         return True
     alpha = sum(1 for c in s if c.isalpha())
     if alpha < 8:
         return True
     if _RE_MOSTLY_SYMBOLS.match(s.replace(" ", "")):
+        return True
+    if _RE_SOLUTION_PHRASE.search(s) and len(s.split()) <= 15:
         return True
     if len(s) < 25 and not _VERB_LIKE.search(s):
         return True
@@ -39,9 +69,16 @@ def _clean_for_summary(text: str) -> str:
         return ""
     kept = []
     for line in text.splitlines():
-        if _is_noise_line(line):
+        s = line.strip()
+        if not s:
             continue
-        kept.append(line.strip())
+        if _is_noise_line(s):
+            continue
+        # Strip inline watermark / NCERT boilerplate fragments
+        s = _RE_WATERMARK.sub("", s).strip()
+        if len(s) < 8:
+            continue
+        kept.append(s)
     return "\n".join(kept)
 
 
@@ -117,6 +154,12 @@ def _score_confidence(sentences: List[str], picked: List[str], keywords: List[st
     kw_signal = min(len(keywords) / 5.0, 1.0)
     length_signal = min(len(picked) / 3.0, 1.0)
     return min(1.0, coverage * 0.5 + kw_signal * 0.25 + length_signal * 0.25)
+
+
+def should_use_extractive(opt=None) -> bool:
+    """Return False when high quality mode forces LLM summarization."""
+    from .quality_policy import prefer_llm_summaries
+    return not prefer_llm_summaries(opt)
 
 
 def summarize(

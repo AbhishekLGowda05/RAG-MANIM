@@ -25,7 +25,6 @@ class NvidiaClient:
         self.max_retries = max_retries
         # Dynamically fetch key to avoid module-load caching
         self.nvidia_api_key = os.getenv("NVIDIA_API_KEY") or NVIDIA_API_KEY
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
         
         if not self.nvidia_api_key and not self.gemini_api_key:
             logger.warning("No LLM API keys found in active environmental context!")

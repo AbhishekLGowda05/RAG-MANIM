@@ -57,11 +57,24 @@ from .utils import (
     PROMPT_OVERHEAD_TOKENS,
 )
 from .deterministic_toc import parse_toc as deterministic_parse_toc, find_toc_page_index
+from .heading_hints import detect_textbook_content_start
+from .model_router import is_max_quality
 from .hierarchy_repair import (
     repair_hierarchy,
     semantic_boundary_refiner,
     map_toc_pages_to_physical,
     inject_subsections_into_tree,
+    filter_junk_toc_entries,
+    reset_junk_filter_stats,
+    log_junk_filter_stats,
+    polish_titles_llm,
+)
+from .quality_policy import (
+    skip_deterministic_toc,
+    junk_filter_strict,
+    force_title_polish,
+    log_quality_path_summary,
+    record_path,
 )
 from .validators import validate_semantic_tree
 from .telemetry import PipelineMetrics
@@ -420,12 +433,14 @@ def _dedupe_toc_entries(entries):
     return out
 
 
-def _min_chapter_content_page(nodes: list) -> int:
+def _min_chapter_content_page(nodes: list, page_list: list | None = None) -> int:
     """Earliest start page among chapter nodes — skips front-matter during subsection scan."""
     chapters = [n for n in nodes if n.get("content_type") == "chapter"]
-    if not chapters:
-        return 1
-    return min(n.get("start_index") or n.get("start_page") or 1 for n in chapters)
+    if chapters:
+        return min(n.get("start_index") or n.get("start_page") or 1 for n in chapters)
+    if page_list:
+        return detect_textbook_content_start(page_list)
+    return 1
 
 
 _REPEATED_HEADER_RE = re.compile(r"(?:^|\n)([^\n]{0,120})\n(?:.*\n)*?\1\n", re.MULTILINE)
@@ -568,8 +583,9 @@ def find_toc_pages(start_page_index, page_list, opt, logger=None, results_dir=No
     page_texts = [page_list[i][0] or "" for i in range(start_page_index, end)]
     toc_anchor = find_toc_page_index(page_texts, max_scan=len(page_texts))
     min_conf = getattr(opt, "toc_deterministic_min_confidence", 0.55)
+    use_deterministic = not skip_deterministic_toc(opt)
 
-    if toc_anchor is not None:
+    if use_deterministic and toc_anchor is not None:
         abs_idx = start_page_index + toc_anchor
         toc_page_list = [abs_idx]
         full_toc_text = page_list[abs_idx][0] or ""
@@ -585,27 +601,33 @@ def find_toc_pages(start_page_index, page_list, opt, logger=None, results_dir=No
                 f"page={abs_idx + 1} entries={len(det_entries)} confidence={det_conf:.2f}",
                 flush=True,
             )
+            record_path("deterministic_toc")
             detection, _ = _detection_from_deterministic(det_entries, toc_page_list)
             detection.toc_entries = _dedupe_toc_entries(detection.toc_entries)
             return detection, toc_page_list
 
     toc_page_list = list(range(start_page_index, end))
-    batch_text = _pages_text(page_list, start_page_index, end, chars_limit=chars_limit)
-    det_entries, det_conf = deterministic_parse_toc(batch_text, max_pages=len(page_list))
-    if det_entries and det_conf >= min_conf:
-        if logger:
-            logger.info(
-                f"find_toc_pages: deterministic parser confidence={det_conf:.2f} "
-                f"entries={len(det_entries)}"
+    if use_deterministic:
+        batch_text = _pages_text(page_list, start_page_index, end, chars_limit=chars_limit)
+        det_entries, det_conf = deterministic_parse_toc(batch_text, max_pages=len(page_list))
+        if det_entries and det_conf >= min_conf:
+            if logger:
+                logger.info(
+                    f"find_toc_pages: deterministic parser confidence={det_conf:.2f} "
+                    f"entries={len(det_entries)}"
+                )
+            print(
+                f"[PageIndex] stage=toc_detection action=deterministic "
+                f"entries={len(det_entries)} confidence={det_conf:.2f}",
+                flush=True,
             )
-        print(
-            f"[PageIndex] stage=toc_detection action=deterministic "
-            f"entries={len(det_entries)} confidence={det_conf:.2f}",
-            flush=True,
-        )
-        detection, _ = _detection_from_deterministic(det_entries, toc_page_list)
-        detection.toc_entries = _dedupe_toc_entries(detection.toc_entries)
-        return detection, toc_page_list
+            record_path("deterministic_toc")
+            detection, _ = _detection_from_deterministic(det_entries, toc_page_list)
+            detection.toc_entries = _dedupe_toc_entries(detection.toc_entries)
+            return detection, toc_page_list
+    elif logger:
+        logger.info("find_toc_pages: skipping deterministic TOC (quality-level=high)")
+        print("[PageIndex] stage=toc_detection mode=llm_only (deterministic skipped)", flush=True)
 
     merged_entries = []
     toc_found = False
@@ -619,8 +641,17 @@ def find_toc_pages(start_page_index, page_list, opt, logger=None, results_dir=No
                 batch_start, batch_end, page_list, opt, logger, batch_index,
                 checkpoints=None, results_dir=results_dir,
             )
+            record_path("llm_toc")
         except (TokenBudgetExceeded, TimeoutError, PipelineStageFailure) as exc:
-            if batch_end - batch_start > 1:
+            from .model_router import is_max_quality
+            from .nvidia_hybrid import nvidia_escalation_was_attempted, nvidia_available
+
+            batch_size = batch_end - batch_start
+            should_shrink = batch_size > 1
+            if should_shrink and isinstance(exc, (TimeoutError, PipelineStageFailure)) and is_max_quality():
+                should_shrink = nvidia_escalation_was_attempted() or not nvidia_available()
+
+            if should_shrink:
                 mid = batch_start + (batch_end - batch_start) // 2
                 PipelineMetrics.record_shrink("toc_detection")
                 if logger:
@@ -761,8 +792,15 @@ async def meta_processor(page_list, mode=None, toc_content=None, toc_page_list=N
     )
     toc_with_page_number = [item for item in toc_with_page_number if item.get("physical_index") is not None]
 
+    toc_with_page_number = filter_junk_toc_entries(
+        toc_with_page_number,
+        logger=logger,
+        strict=junk_filter_strict(opt),
+        min_content_page=detect_textbook_content_start(page_list),
+    )
+
     if logger:
-        logger.info(f"meta_processor: {len(toc_with_page_number)} entries after deterministic filter")
+        logger.info(f"meta_processor: {len(toc_with_page_number)} entries after junk filter")
 
     return toc_with_page_number
 
@@ -917,10 +955,15 @@ async def tree_parser(page_list, opt, doc=None, logger=None, checkpoints=None, r
     _early_val = validate_semantic_tree({"structure": toc_tree}, **_validation_kwargs(opt))
     if not _early_val["checks"].get("chapters_have_children"):
         print("[PageIndex] stage=subsection_injection action=run reason=no_children", flush=True)
-        min_content = _min_chapter_content_page(toc_tree)
+        min_content = _min_chapter_content_page(toc_tree, page_list)
+        min_heading_len = int(getattr(opt, "min_heading_len", 8) or 8)
         added = inject_subsections_into_tree(
-            toc_tree, page_list, logger=logger, min_content_page=min_content,
+            toc_tree, page_list, logger=logger,
+            min_content_page=min_content,
+            min_heading_len=min_heading_len,
+            opt=opt,
         )
+        log_junk_filter_stats(logger=logger, max_quality=is_max_quality())
         if added:
             print(f"[PageIndex] stage=subsection_injection action=complete children_added={added}", flush=True)
         else:
@@ -1015,10 +1058,35 @@ def _minimal_flat_structure(page_list, pdf_name: str) -> list:
     ] or [{"node_id": "0000", "title": pdf_name or "Document", "start_index": 1, "end_index": 1}]
 
 
+def _merge_summaries_into_structure(structure: list, cached_summaries: list) -> list:
+    """Apply flat summary cache onto an in-memory tree without replacing page spans."""
+    if not cached_summaries or not structure:
+        return structure
+    by_id = {s["node_id"]: s for s in cached_summaries if s.get("node_id")}
+
+    def _apply(node: dict) -> None:
+        nid = node.get("node_id")
+        if nid and nid in by_id:
+            src = by_id[nid]
+            for key in (
+                "summary", "keywords", "semantic_tags", "learning_objectives",
+                "visualizable_elements", "content_type",
+            ):
+                if src.get(key):
+                    node[key] = src[key]
+        for ch in node.get("nodes") or node.get("children") or []:
+            _apply(ch)
+
+    for root in structure:
+        _apply(root)
+    return structure
+
+
 def page_index_main(doc, opt=None):
     global _split_counter
     _split_counter = []
     reset_runtime_summary()
+    reset_junk_filter_stats()
 
     if opt is None:
         opt = ConfigLoader().load()
@@ -1050,7 +1118,12 @@ def page_index_main(doc, opt=None):
         ]
         print(f"  resume: loaded {len(page_list)} pages from extracted_pages.json")
     else:
-        page_list = get_page_tokens(doc, model=None, use_api_tokenizer=False)
+        page_list = get_page_tokens(
+            doc,
+            model=None,
+            use_api_tokenizer=False,
+            pdf_parser=getattr(opt, "pdf_parser", None) or "PyPDF2",
+        )
         print(f"  extracted {len(page_list)} pages")
 
     page_list = strip_page_list_banners(page_list, logger=logger)
@@ -1101,9 +1174,9 @@ def page_index_main(doc, opt=None):
             if checkpoints.is_done("summaries.json", getattr(opt, "resume", False)):
                 cached = checkpoints.load("summaries.json")
                 if cached:
-                    structure = cached
+                    structure = _merge_summaries_into_structure(structure, cached)
                     if logger:
-                        logger.info("page_index_builder: resume — loaded summaries.json")
+                        logger.info("page_index_builder: resume — merged summaries.json into tree")
             else:
                 logger.info("pipeline_stage=summary_generation")
                 try:
@@ -1116,6 +1189,12 @@ def page_index_main(doc, opt=None):
                     )
                 except PipelineStageFailure as exc:
                     logger.error({"summary_stage_failed": str(exc), "fallback": "title_only"})
+            if force_title_polish(opt):
+                polished = polish_titles_llm(structure, opt=opt, logger=logger)
+                print(
+                    f"[PageIndex] stage=title_polish action=complete polished={polished}",
+                    flush=True,
+                )
             if getattr(opt, "if_add_node_text", "no") == "no":
                 remove_structure_text(structure)
 
@@ -1172,10 +1251,15 @@ def page_index_main(doc, opt=None):
                 f"failures={validation['failures']}",
                 flush=True,
             )
-            min_content = _min_chapter_content_page(structure)
+            min_content = _min_chapter_content_page(structure, page_list)
+            min_heading_len = int(getattr(opt, "min_heading_len", 8) or 8)
             added = inject_subsections_into_tree(
-                structure, page_list, logger=logger, min_content_page=min_content,
+                structure, page_list, logger=logger,
+                min_content_page=min_content,
+                min_heading_len=min_heading_len,
+                opt=opt,
             )
+            log_junk_filter_stats(logger=logger, max_quality=is_max_quality())
             if added:
                 validation = validate_semantic_tree(result, logger=logger, **_validation_kwargs(opt))
                 print(
@@ -1211,6 +1295,8 @@ def page_index_main(doc, opt=None):
         checkpoints.save("semantic_validation.json", validation)
 
     PipelineMetrics.dump(os.path.join(results_dir, "pipeline_metrics.json"))
+    log_junk_filter_stats(logger=logger, max_quality=is_max_quality())
+    log_quality_path_summary(quality_level=getattr(opt, "quality_level", "fast"))
 
     if getattr(opt, "benchmark", False):
         try:

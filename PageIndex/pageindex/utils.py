@@ -500,6 +500,7 @@ def nodes_to_children_export(structure):
 def strip_page_list_banners(page_list: list, logger=None) -> list:
     """Remove repeated textbook header/footer lines from every page."""
     from collections import Counter
+    from .heading_hints import _RE_WATERMARK
 
     line_counts: Counter = Counter()
     for text, _ in page_list:
@@ -513,13 +514,30 @@ def strip_page_list_banners(page_list: list, logger=None) -> list:
         ln for ln in line_counts
         if re.search(r"CBSE\s+Grade|NCERT|Visual\s+AI\s+Teaching|Physics\s+for\s+Everyone", ln, re.I)
     })
+    noise.update({
+        ln for ln in line_counts
+        if _RE_WATERMARK.search(ln)
+    })
     cleaned = []
     for text, tok in page_list:
-        lines = [l for l in (text or "").splitlines() if l.strip() not in noise]
+        lines = []
+        for l in (text or "").splitlines():
+            s = l.strip()
+            if s in noise:
+                continue
+            if _RE_WATERMARK.search(s):
+                continue
+            lines.append(l)
         cleaned.append(("\n".join(lines), tok))
     if logger and noise:
         logger.info({"strip_page_list_banners": len(noise)})
     return cleaned
+
+
+def clean_node_text(text: str) -> str:
+    """Remove answer-key fragments, watermarks, and noise before summarization."""
+    from . import extractive
+    return extractive._clean_for_summary(text or "")
 
 def add_preface_if_needed(data):
     if not isinstance(data, list) or not data:
@@ -528,8 +546,9 @@ def add_preface_if_needed(data):
     if data[0]['physical_index'] is not None and data[0]['physical_index'] > 1:
         preface_node = {
             "structure": "0",
-            "title": "Preface",
+            "title": "Front Matter",
             "physical_index": 1,
+            "content_type": "preface",
         }
         data.insert(0, preface_node)
     return data
@@ -551,14 +570,21 @@ def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2", use_api_tokenizer
         return count_tokens(page_text, model=None)
 
     if pdf_parser == "PyPDF2":
-        pdf_reader = PyPDF2.PdfReader(pdf_path)
-        page_list = []
-        for page_num in range(len(pdf_reader.pages)):
-            page = pdf_reader.pages[page_num]
-            page_text = page.extract_text()
-            page_list.append((page_text, _page_token_len(page_text)))
-        return page_list
-    elif pdf_parser == "PyMuPDF":
+        try:
+            pdf_reader = PyPDF2.PdfReader(pdf_path)
+            page_list = []
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                page_text = page.extract_text()
+                page_list.append((page_text, _page_token_len(page_text)))
+            return page_list
+        except Exception as exc:
+            print(
+                f"[PageIndex] PyPDF2 failed ({type(exc).__name__}); falling back to PyMuPDF",
+                flush=True,
+            )
+            pdf_parser = "PyMuPDF"
+    if pdf_parser == "PyMuPDF":
         if isinstance(pdf_path, BytesIO):
             pdf_stream = pdf_path
             doc = pymupdf.open(stream=pdf_stream, filetype="pdf")
@@ -574,10 +600,12 @@ def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2", use_api_tokenizer
 
         
 
-def get_text_of_pdf_pages(pdf_pages, start_page, end_page):
+def get_text_of_pdf_pages(pdf_pages, start_page, end_page, *, clean: bool = True):
     text = ""
-    for page_num in range(start_page-1, end_page):
+    for page_num in range(start_page - 1, end_page):
         text += pdf_pages[page_num][0]
+    if clean and text:
+        text = clean_node_text(text)
     return text
 
 def get_text_of_pdf_pages_with_labels(pdf_pages, start_page, end_page):
@@ -863,6 +891,8 @@ def _clean_child_blob(blob: str) -> str:
 
 async def _summarize_chapter_node(node, model=None, opt=None):
     """Synthesize chapter summary from child section summaries (not raw body)."""
+    from .quality_policy import prefer_llm_summaries
+
     child_blob = _collect_child_summaries(node)
     raw = (node.get("text") or "")[:1500]
     child_titles = [
@@ -879,7 +909,7 @@ async def _summarize_chapter_node(node, model=None, opt=None):
         enrich_node_metadata(node, child_titles)
         return
 
-    if child_blob and len(child_blob) >= 200:
+    if child_blob and len(child_blob) >= 200 and not prefer_llm_summaries(opt):
         node["summary"] = _clean_child_blob(child_blob)
         node["_summary_source"] = "chapter_children_concat"
         enrich_node_metadata(node, child_titles)
@@ -892,7 +922,7 @@ async def _summarize_chapter_node(node, model=None, opt=None):
     if not prompt_body:
         prompt_body = raw[:1500] or node.get("title", "")
 
-    use_quality = getattr(opt, "quality", False) if opt else False
+    use_quality = (getattr(opt, "quality", False) if opt else False) or prefer_llm_summaries(opt)
     chapter_timeout = getattr(opt, "chapter_summary_timeout_seconds", 45) if opt else 45
     num_predict = getattr(opt, "summary_num_predict", 384) if opt else 384
 
@@ -920,6 +950,8 @@ async def _summarize_chapter_node(node, model=None, opt=None):
             if out.summary and len(out.summary.strip()) >= 30:
                 node["summary"] = out.summary.strip()
                 node["_summary_source"] = "chapter_slm"
+                from .quality_policy import record_path
+                record_path("llm_summary")
                 enrich_node_metadata(node, child_titles)
                 return
         except Exception as exc:
@@ -945,9 +977,12 @@ async def _summarize_chapter_node(node, model=None, opt=None):
 
 
 async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, opt=None):
+    from .quality_policy import prefer_llm_summaries, record_path
+
     needs_slm = []
     max_chars = getattr(opt, "max_node_text_chars", None) if opt else None
     max_sentences = EXTRACTIVE_MAX_SENTENCES
+    force_llm = prefer_llm_summaries(opt)
 
     for node in batch:
         if node.get("level") == 1 or node.get("content_type") == "chapter":
@@ -955,12 +990,14 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
         text = node.get("text", "") or ""
         if max_chars and len(text) > max_chars:
             text = text[:max_chars] + "\n...(truncated)"
-        # For garbled OCR, skip extractive — glyph codes produce nonsense sentences.
         if _is_garbled_ocr(text):
             title = node.get("title", "") or "Section"
             node["summary"] = f"This section covers: {title}."
             node["keywords"] = []
             node["_summary_source"] = "title_only_garbled"
+            continue
+        if force_llm:
+            needs_slm.append((node, {}))
             continue
         ext = extractive.summarize(text, max_sentences=max_sentences)
         if ext["confidence"] >= EXTRACTIVE_MIN_CONFIDENCE and ext["summary"]:
@@ -968,6 +1005,7 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
             node["keywords"] = ext.get("keywords", [])
             node["_summary_source"] = "extractive"
             enrich_node_metadata(node)
+            record_path("extractive_summary")
             try:
                 from .telemetry import PipelineMetrics
                 PipelineMetrics.record_extractive("summary_generation")
@@ -1020,6 +1058,7 @@ async def _run_summary_batch(batch, batch_index, model=None, checkpoints=None, o
                     node["keywords"] = ns.keywords
                     node["semantic_tags"] = getattr(ns, "semantic_tags", None) or []
                     node["_summary_source"] = "slm"
+                    record_path("llm_summary")
                 elif ext.get("summary"):
                     node["summary"] = ext["summary"]
                     node["keywords"] = ext.get("keywords", [])
@@ -1120,12 +1159,25 @@ async def generate_summaries_for_structure(structure, model=None, max_nodes=None
         if ch.get("nodes") or not ch.get("summary"):
             await _summarize_chapter_node(ch, model=model, opt=opt)
 
+    from .quality_policy import prefer_llm_summaries
+
     for node in structure_to_list(structure):
         if not node.get("summary"):
-            ext = extractive.summarize(node.get("text", "") or node.get("title", ""), max_sentences=2)
-            node["summary"] = ext.get("summary") or node.get("title", "") or "Section"
-            node["keywords"] = node.get("keywords") or ext.get("keywords", [])
-        enrich_node_metadata(node)
+            text = (node.get("text") or "")
+            filled = False
+            if text and not prefer_llm_summaries(opt):
+                ext = extractive.summarize(text[:3000], max_sentences=2)
+                if ext.get("summary") and len(ext["summary"]) >= 20:
+                    node["summary"] = ext["summary"]
+                    node["keywords"] = ext.get("keywords", [])
+                    node["_summary_source"] = "extractive_final_fallback"
+                    filled = True
+            if not filled:
+                title = node.get("title", "") or "Section"
+                node["summary"] = f"This section covers: {title}."
+                node["keywords"] = node.get("keywords", [])
+                node["_summary_source"] = "title_only"
+            enrich_node_metadata(node)
 
     if checkpoints:
         flat = [
@@ -1219,7 +1271,7 @@ class ConfigLoader:
 
     def _validate_keys(self, user_dict):
         profile_keys = set()
-        for block in ("cpu_mode", "gpu_mode", "demo_overrides"):
+        for block in ("cpu_mode", "gpu_mode", "demo_overrides", "max_quality_mode", "high_quality_mode"):
             if isinstance(self._default_dict.get(block), dict):
                 profile_keys |= set(self._default_dict[block])
         known = (
@@ -1229,7 +1281,13 @@ class ConfigLoader:
                 "model", "test_mode", "enable_gemini_fallback", "mode", "demo",
                 "resume", "benchmark", "no_summaries", "max_pages", "stage_models",
                 "summary_num_predict", "boundary_extend_max_pages", "quality",
-                "chapter_summary_timeout_seconds",
+                "max_quality", "max_quality_mode", "high_quality_mode", "nvidia",
+                "quality_level", "skip_deterministic_toc", "force_llm_summaries",
+                "force_llm_subsections", "force_title_polish",
+                "hybrid_nvidia_enabled", "nvidia_stages", "nvidia_route_after_timeouts",
+                "nvidia_first", "local_fallback_model", "subsection_llm_timeout_seconds",
+                "tree_max_depth", "recursive_depth", "min_heading_len", "junk_filter_strict",
+                "chapter_summary_timeout_seconds", "pdf_parser",
             }
         )
         unknown_keys = set(user_dict) - known
@@ -1264,6 +1322,29 @@ class ConfigLoader:
             for k, v in (merged.get("demo_overrides") or {}).items():
                 if v is not None:
                     merged[k] = v
+
+        ql = str(merged.get("quality_level") or "fast").lower()
+        if ql not in ("fast", "balanced", "high"):
+            ql = "fast"
+        if merged.get("max_quality") and ql == "fast":
+            ql = "balanced"
+        merged["quality_level"] = ql
+
+        if ql == "high":
+            merged["quality"] = True
+            merged["max_quality"] = True
+            for k, v in (merged.get("max_quality_mode") or {}).items():
+                if v is not None:
+                    merged[k] = v
+            for k, v in (merged.get("high_quality_mode") or {}).items():
+                if v is not None and k != "quality_level":
+                    merged[k] = v
+        elif merged.get("max_quality"):
+            merged["quality"] = True
+            for k, v in (merged.get("max_quality_mode") or {}).items():
+                if v is not None:
+                    merged[k] = v
+
         if "model" in user_dict:
             merged.setdefault("token_count_model", user_dict["model"])
         stage_models = merged.get("stage_models")
