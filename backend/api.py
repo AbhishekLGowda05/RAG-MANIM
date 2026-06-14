@@ -369,60 +369,23 @@ async def run_pipeline_task(
     logger.info(f"Dynamically set LLM keys: GEMINI_API_KEY={'set' if g_key else 'not set'} | NVIDIA_API_KEY={'set' if n_key else 'not set'}")
     
     try:
-        # --- Stage 0: Initializing explanation package ---
-        await queue.put({"stage": "retrieving", "progress": 5, "message": "Contacting classroom agent pipeline..."})
-        await asyncio.sleep(1.0)
-        
-        # Generate the explanation package using the LLM client
-        await queue.put({"stage": "explaining", "progress": 15, "message": "Formulating pedagogical syllabus objectives..."})
-        
-        learner_context_block = format_learner_context(learner_profile, topic, subject)
-
-        explanation_package = None
-        try:
-            client = NvidiaClient()
-            prompt = (
-                f"{learner_context_block}\n\n"
-                f"Topic: {topic}. Generate a structured educational blueprint with "
-                "learning objectives, prerequisites, and 2-3 DIFFERENT real-world analogies "
-                "calibrated to the learner above. Each analogy must be distinct."
-            )
-            messages = [
-                {"role": "system", "content": "You are a professional NCERT/CBSE explanation assistant. Personalize content to the LEARNER CONTEXT below. Respond ONLY with a valid JSON object matching this schema: {\"topic\": \"...\", \"learning_objectives\": [\"...\"], \"core_explanation\": \"...\", \"analogies\": [\"...\"], \"prerequisites\": [\"...\"]}. Do not use markdown blocks or formatting fences."},
-                {"role": "user", "content": prompt}
-            ]
-            raw_expl = client.chat_json(modules.config.NVIDIA_PLANNER_MODEL, messages, temperature=0.4, max_tokens=1024)
-            if isinstance(raw_expl, dict) and "topic" in raw_expl:
-                explanation_package = raw_expl
-        except Exception as e:
-            logger.warning(f"Failed to generate structured explanation package: {e}")
-            
-        if not explanation_package:
-            # Fallback values
-            explanation_package = {
-                "topic": topic,
-                "learning_objectives": [
-                    f"Understand the core physics principles of {topic}.",
-                    f"Analyze real-world scenarios representing {topic}."
-                ],
-                "core_explanation": f"This lesson explores {topic}. We examine the fundamental definitions, equations, and mechanics involved.",
-                "analogies": [
-                    f"Like a sliding puck on smooth ice representing frictionless motion, {topic} describes how systems behave under physical constraints."
-                ],
-                "prerequisites": ["Basic Physical Quantities", "Concept of Forces"]
-            }
-            
-        await queue.put({
-            "stage": "explaining",
-            "progress": 25,
-            "message": "Pedagogical explanation summary synthesized!",
-            "data": explanation_package
-        })
-        await asyncio.sleep(0.5)
-
-        # --- Stage 1: Retrieve curriculum context ---
+        # --- Stage 0: Retrieve curriculum context ---
+        await queue.put({"stage": "retrieving", "progress": 5, "message": "Searching curriculum structure and textbook evidence..."})
         curriculum_sections = retrieve_curriculum_sections(topic)
         curriculum_context = retrieve_curriculum_context(topic)
+        logger.info(
+            "Retrieved %d curriculum sections",
+            len(curriculum_sections)
+        )
+        logger.info(
+            "Curriculum context chars=%d",
+            len(curriculum_context)
+        )
+        if curriculum_context:
+            logger.info(
+                "Curriculum preview:\n%s",
+                curriculum_context[:1500]
+            )
         if curriculum_sections:
             section_log = [
                 {
@@ -442,6 +405,54 @@ async def run_pipeline_task(
         else:
             logger.warning("curriculum_sections topic=%r matched=0 (no sections found)", topic)
         logger.info("curriculum_context topic=%r length=%s", topic, len(curriculum_context))
+
+        # --- Stage 1: Generate explanation package ---
+        await queue.put({"stage": "explaining", "progress": 15, "message": "Formulating pedagogical syllabus objectives..."})
+
+        learner_context_block = format_learner_context(learner_profile, topic, subject)
+
+        explanation_package = None
+        try:
+            client = NvidiaClient()
+            prompt = (
+                f"CURRICULUM CONTEXT:\n{curriculum_context}\n\n"
+                f"{learner_context_block}\n\n"
+                f"Topic: {topic}. Generate a structured educational blueprint with "
+                "learning objectives, prerequisites, and 2-3 DIFFERENT real-world analogies "
+                "calibrated to the learner above. Each analogy must be distinct."
+            )
+            messages = [
+                {"role": "system", "content": "You are a professional NCERT/CBSE explanation assistant. Use the curriculum context as the primary source of truth. Personalize content to the LEARNER CONTEXT below. Respond ONLY with a valid JSON object matching this schema: {\"topic\": \"...\", \"learning_objectives\": [\"...\"], \"core_explanation\": \"...\", \"analogies\": [\"...\"], \"prerequisites\": [\"...\"]}. Do not use markdown blocks or formatting fences."},
+                {"role": "user", "content": prompt}
+            ]
+            raw_expl = client.chat_json(modules.config.NVIDIA_PLANNER_MODEL, messages, temperature=0.4, max_tokens=1024)
+            if isinstance(raw_expl, dict) and "topic" in raw_expl:
+                explanation_package = raw_expl
+        except Exception as e:
+            logger.warning(f"Failed to generate structured explanation package: {e}")
+
+        if not explanation_package:
+            # Fallback values
+            explanation_package = {
+                "topic": topic,
+                "learning_objectives": [
+                    f"Understand the core physics principles of {topic}.",
+                    f"Analyze real-world scenarios representing {topic}."
+                ],
+                "core_explanation": f"This lesson explores {topic}. We examine the fundamental definitions, equations, and mechanics involved.",
+                "analogies": [
+                    f"Like a sliding puck on smooth ice representing frictionless motion, {topic} describes how systems behave under physical constraints."
+                ],
+                "prerequisites": ["Basic Physical Quantities", "Concept of Forces"]
+            }
+
+        await queue.put({
+            "stage": "explaining",
+            "progress": 25,
+            "message": "Pedagogical explanation summary synthesized!",
+            "data": explanation_package
+        })
+        await asyncio.sleep(0.5)
 
         # --- Stage 2: Storyboard ---
         await queue.put({
@@ -469,13 +480,23 @@ async def run_pipeline_task(
         # --- Stage 2: Semantic plans ---
         await queue.put({"stage": "generating", "progress": 55, "message": "[2/8] Creating visual scene blueprints and vector templates..."})
         plans = build_all_semantic_plans(
-            storyboard, learner_profile=learner_profile, topic=topic, subject=subject
+            storyboard,
+            curriculum_context=curriculum_context,
+            curriculum_sections=curriculum_sections,
+            learner_profile=learner_profile,
+            topic=topic,
+            subject=subject,
         )
 
         # --- Stage 3: Narration ---
         await queue.put({"stage": "generating", "progress": 65, "message": "[3/8] Writing detailed scene explanations and word cues..."})
         plans = write_all_narrations(
-            plans, learner_profile=learner_profile, topic=topic, subject=subject
+            plans,
+            curriculum_context=curriculum_context,
+            curriculum_sections=curriculum_sections,
+            learner_profile=learner_profile,
+            topic=topic,
+            subject=subject,
         )
         
         # Concatenate script text for the script inspector

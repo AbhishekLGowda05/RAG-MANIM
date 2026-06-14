@@ -33,6 +33,12 @@ Respond ONLY with valid JSON. No markdown fences."""
 
 SEMANTIC_PLAN_EXPLAIN_PROMPT = """Fill the semantic plan for this CHALKBOARD EXPLANATION scene.
 
+CURRICULUM CONTEXT:
+{curriculum_context}
+Use the curriculum context as the primary source of truth.
+Use terminology, formulas, labels, and concepts from the curriculum context whenever possible.
+Do not invent unsupported facts.
+
 {learner_context}
 
 STORYBOARD ENTRY:
@@ -75,6 +81,11 @@ Return ONLY this JSON shape:
 }}"""
 
 SEMANTIC_PLAN_PROMPT = """Fill the semantic plan for this scene.
+
+CURRICULUM CONTEXT:
+{curriculum_context}
+Use the curriculum context as the primary source of truth.
+Use textbook terminology whenever available.
 
 {learner_context}
 
@@ -125,6 +136,8 @@ Return ONLY this JSON shape:
 
 def build_semantic_plan(
     storyboard_entry: dict[str, Any],
+    curriculum_context: str = "",
+    curriculum_sections: list | None = None,
     learner_profile: dict[str, Any] | None = None,
     topic: str = "",
     subject: str = "Physics",
@@ -150,6 +163,7 @@ def build_semantic_plan(
     client = NvidiaClient()
     if is_explain and content_schema:
         prompt = SEMANTIC_PLAN_EXPLAIN_PROMPT.format(
+            curriculum_context=curriculum_context,
             storyboard_entry=json.dumps(storyboard_entry, indent=2),
             template_id=template_id,
             allowed_events=", ".join(allowed_events),
@@ -160,6 +174,7 @@ def build_semantic_plan(
         )
     else:
         prompt = SEMANTIC_PLAN_PROMPT.format(
+            curriculum_context=curriculum_context,
             storyboard_entry=json.dumps(storyboard_entry, indent=2),
             template_id=template_id,
             allowed_events=", ".join(allowed_events),
@@ -214,12 +229,21 @@ def build_semantic_plan(
 
 def build_all_semantic_plans(
     storyboard: list[dict[str, Any]],
+    curriculum_context: str = "",
+    curriculum_sections: list | None = None,
     learner_profile: dict[str, Any] | None = None,
     topic: str = "",
     subject: str = "Physics",
 ) -> list[dict[str, Any]]:
     return [
-        build_semantic_plan(entry, learner_profile=learner_profile, topic=topic, subject=subject)
+        build_semantic_plan(
+            entry,
+            curriculum_context=curriculum_context,
+            curriculum_sections=curriculum_sections,
+            learner_profile=learner_profile,
+            topic=topic,
+            subject=subject,
+        )
         for entry in storyboard
     ]
 

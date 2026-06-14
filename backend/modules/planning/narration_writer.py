@@ -32,6 +32,12 @@ Respond with ONLY the narration text. No JSON, no commentary."""
 
 NARRATION_PROMPT = """Write narration for this scene. It will be read aloud over an animation.
 
+CURRICULUM CONTEXT:
+{curriculum_context}
+Use the curriculum context as the primary source of truth.
+Use textbook terminology whenever available.
+Do not contradict the curriculum context.
+
 {learner_context}
 
 SCENE TITLE: {title}
@@ -52,6 +58,10 @@ RULES:
 Return ONLY the narration text:"""
 
 NARRATION_REPAIR_PROMPT = """Your previous narration was MISSING these required phrases:
+
+CURRICULUM CONTEXT:
+{curriculum_context}
+
 {missing}
 
 SCENE: {title}
@@ -63,6 +73,8 @@ Return ONLY the narration text:"""
 
 def write_narration(
     plan: dict[str, Any],
+    curriculum_context: str = "",
+    curriculum_sections: list | None = None,
     learner_profile: dict[str, Any] | None = None,
     topic: str = "",
     subject: str = "Physics",
@@ -97,6 +109,7 @@ def write_narration(
     client = NvidiaClient()
     phrases_display = "\n".join(f'  "{p}"' for p in unique_phrases)
     prompt = NARRATION_PROMPT.format(
+        curriculum_context=curriculum_context,
         learner_context=learner_context,
         title=title,
         anchor_example=anchor_example,
@@ -122,6 +135,7 @@ def write_narration(
             "Scene %d narration attempt %d missing phrases: %s", scene_id, attempt + 1, missing
         )
         repair_prompt = NARRATION_REPAIR_PROMPT.format(
+            curriculum_context=curriculum_context,
             missing="\n".join(f'  "{p}"' for p in missing),
             title=title,
             phrases=phrases_display,
@@ -146,6 +160,8 @@ def write_narration(
 
 def write_all_narrations(
     plans: list[dict[str, Any]],
+    curriculum_context: str = "",
+    curriculum_sections: list | None = None,
     learner_profile: dict[str, Any] | None = None,
     topic: str = "",
     subject: str = "Physics",
@@ -153,7 +169,12 @@ def write_all_narrations(
     """Write narrations for all plans and attach them in-place."""
     for plan in plans:
         narration = write_narration(
-            plan, learner_profile=learner_profile, topic=topic, subject=subject
+            plan,
+            curriculum_context=curriculum_context,
+            curriculum_sections=curriculum_sections,
+            learner_profile=learner_profile,
+            topic=topic,
+            subject=subject,
         )
         plan["narration"] = narration
         logger.info(
