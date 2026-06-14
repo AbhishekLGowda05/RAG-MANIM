@@ -27,6 +27,50 @@ const MOCK_SYLLABUS = {
   ]
 };
 
+function shortDocLabel(doc) {
+  const name = doc.doc_name || doc.id || '';
+  if (name.toLowerCase().includes('chemistry')) return 'Chemistry (Class 9)';
+  if (name.toLowerCase().includes('physics')) return 'Physics (Class 10)';
+  if (name.length > 36) return `${name.slice(0, 33)}...`;
+  return name;
+}
+
+function buildGraphFromStructure(structureData, subject = 'General') {
+  const nodes = [];
+  const links = [];
+  let nodeIndex = 0;
+
+  const addNode = (item, parentId = null, depth = 0) => {
+    if (!item?.title || item.content_type === 'preface') return null;
+    const id = item.node_id || `node_${nodeIndex++}`;
+    const radius = depth === 0 ? 22 : depth === 1 ? 18 : 16;
+    const x = 120 + (nodeIndex % 6) * 90 + depth * 20;
+    const y = 80 + Math.floor(nodeIndex / 6) * 70 + depth * 15;
+    nodes.push({
+      id,
+      label: item.title,
+      subject,
+      x,
+      y,
+      radius,
+      summary: item.summary || `Section from the indexed textbook: ${item.title}`,
+      details: item.keywords?.length
+        ? `Keywords: ${item.keywords.slice(0, 6).join(', ')}`
+        : `Pages ${item.start_index || item.start_page || '?'}–${item.end_index || item.end_page || '?'}`,
+    });
+    if (parentId) links.push({ source: parentId, target: id });
+    const children = item.nodes || item.children || [];
+    children.forEach((child) => addNode(child, id, depth + 1));
+    return id;
+  };
+
+  const structure = structureData?.structure || [];
+  structure.forEach((chapter) => addNode(chapter, null, 0));
+
+  if (!nodes.length) return null;
+  return { nodes, links };
+}
+
 export default function KnowledgeGraph({ setActiveScreen }) {
   const canvasRef = useRef(null);
   const { startPipeline } = useSession();
@@ -43,6 +87,92 @@ export default function KnowledgeGraph({ setActiveScreen }) {
   const [draggedNode, setDraggedNode] = useState(null);
 
   const [graphData, setGraphData] = useState(MOCK_SYLLABUS);
+  const [documents, setDocuments] = useState([]);
+  const [selectedDocId, setSelectedDocId] = useState(null);
+  const [activeDocLabel, setActiveDocLabel] = useState('Mock syllabus');
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [indexMessage, setIndexMessage] = useState('');
+
+  const loadStructureForDoc = async (doc) => {
+    if (!doc?.id) return;
+    setGraphLoading(true);
+    setSelectedDocId(doc.id);
+    setActiveDocLabel(shortDocLabel(doc));
+    setSelectedNode(null);
+    try {
+      const response = await fetch(`/results/${encodeURIComponent(doc.id)}/structure.json`);
+      if (!response.ok) throw new Error('structure.json not found');
+      const structureData = await response.json();
+      const built = buildGraphFromStructure(structureData, doc.subject || 'General');
+      if (built?.nodes?.length) {
+        setGraphData(built);
+      } else {
+        setGraphData(MOCK_SYLLABUS);
+        setActiveDocLabel(`${shortDocLabel(doc)} (fallback mock)`);
+      }
+    } catch (err) {
+      console.warn('Failed to load curriculum structure:', err);
+      setGraphData(MOCK_SYLLABUS);
+      setActiveDocLabel(`${shortDocLabel(doc)} (fallback mock)`);
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    async function loadDocuments() {
+      try {
+        const response = await fetch('/api/curriculum/documents');
+        if (!response.ok) return;
+        const data = await response.json();
+        const docs = (data.documents || []).filter((d) =>
+          /chemistry|physics/i.test(`${d.doc_name} ${d.id}`)
+        );
+        setDocuments(docs.length ? docs : data.documents || []);
+        if (docs.length) {
+          await loadStructureForDoc(docs[0]);
+        } else if (data.documents?.length) {
+          await loadStructureForDoc(data.documents[0]);
+        }
+      } catch (err) {
+        console.warn('Failed to load curriculum documents:', err);
+      }
+    }
+    loadDocuments();
+  }, []);
+
+  const handleIndexPdf = async () => {
+    const filename = window.prompt(
+      'Enter PDF filename from PageIndex/examples/documents (e.g. Chemistry.pdf):',
+      'Chemistry.pdf'
+    );
+    if (!filename) return;
+    setIndexing(true);
+    setIndexMessage('');
+    try {
+      const response = await fetch('/api/curriculum/index', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Indexing failed');
+      setIndexMessage('Indexing complete.');
+      const listRes = await fetch('/api/curriculum/documents');
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const docs = listData.documents || [];
+        setDocuments(docs);
+        const match = docs.find((d) => d.id === filename || d.doc_name === filename);
+        if (match) await loadStructureForDoc(match);
+      }
+    } catch (err) {
+      setIndexMessage(err.message || 'Indexing failed');
+    } finally {
+      setIndexing(false);
+    }
+  };
 
   // Load history metadata if any to overlay completed node markers
   const [historyIds, setHistoryIds] = useState([]);
@@ -281,7 +411,7 @@ export default function KnowledgeGraph({ setActiveScreen }) {
   const handleLearnNode = async () => {
     if (!selectedNode) return;
     setActiveScreen('workspace');
-    await startPipeline(selectedNode.label, selectedNode.subject);
+    await startPipeline(selectedNode.label, selectedNode.subject, selectedDocId);
   };
 
   return (
@@ -300,7 +430,43 @@ export default function KnowledgeGraph({ setActiveScreen }) {
       >
         <div style={{ padding: 'var(--space-5)', borderBottom: '1px solid var(--border-subtle)' }}>
           <h3 className="serif-title" style={{ fontSize: '20px', color: 'var(--text-primary)', margin: 0 }}>Syllabus Map</h3>
-          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>Filter or choose a textbook node below.</p>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            Active: <span style={{ color: 'var(--accent-amber)' }}>{activeDocLabel}</span>
+            {graphLoading ? ' — loading…' : ''}
+          </p>
+
+          {documents.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+              {documents.map((doc) => (
+                <button
+                  key={doc.id}
+                  onClick={() => loadStructureForDoc(doc)}
+                  className="btn btn-ghost"
+                  style={{
+                    fontSize: '11px',
+                    padding: '6px 10px',
+                    textAlign: 'left',
+                    background: selectedDocId === doc.id ? 'var(--bg-raised)' : 'transparent',
+                    color: selectedDocId === doc.id ? 'var(--accent-amber)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {shortDocLabel(doc)} ({doc.node_count} nodes)
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={handleIndexPdf}
+            disabled={indexing}
+            className="btn btn-ghost"
+            style={{ fontSize: '11px', padding: '6px 10px', marginTop: '8px', width: '100%' }}
+          >
+            {indexing ? 'Indexing PDF…' : 'Index PDF from examples/'}
+          </button>
+          {indexMessage && (
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>{indexMessage}</p>
+          )}
           
           <input
             type="text"

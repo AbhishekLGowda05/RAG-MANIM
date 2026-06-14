@@ -12,6 +12,7 @@ export default function Workspace() {
     updateNotes,
     addChatMessage,
     startPipeline,
+    newSession,
     activeStageMsg,
     activeProgress
   } = useSession();
@@ -23,6 +24,12 @@ export default function Workspace() {
   useEffect(() => {
     setCurrentTime(0);
   }, [session.video_url]);
+
+  const handleNewLesson = async () => {
+    await newSession();
+    setInputTopic('');
+    setCurrentTime(0);
+  };
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -52,6 +59,23 @@ export default function Workspace() {
         }}
       >
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flex: 1, gap: 'var(--space-3)', maxWidth: '800px' }}>
+          <button
+            type="button"
+            onClick={handleNewLesson}
+            disabled={isPipelineRunning}
+            className="btn btn-ghost"
+            title="Start a new lesson"
+            style={{
+              padding: '0 14px',
+              fontSize: '18px',
+              borderRadius: 'var(--r-md)',
+              border: '1px solid var(--border-default)',
+              minWidth: '44px',
+              lineHeight: 1,
+            }}
+          >
+            +
+          </button>
           <input
             type="text"
             value={inputTopic}
@@ -108,7 +132,7 @@ export default function Workspace() {
           </button>
         </form>
 
-        {session.topic_resolved && (
+        {session.topic_resolved && session.pipeline_stage !== 'idle' ? (
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Current Topic:</span>
             <span
@@ -122,8 +146,17 @@ export default function Workspace() {
             >
               {session.topic_resolved}
             </span>
+            <button
+              type="button"
+              onClick={handleNewLesson}
+              disabled={isPipelineRunning}
+              className="btn btn-ghost"
+              style={{ fontSize: '11px', padding: '4px 10px' }}
+            >
+              New Lesson
+            </button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Main Workspace Workspace Flow */}

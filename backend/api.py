@@ -11,6 +11,7 @@ Implements all required API endpoints for the LearnOS educational platform:
 import asyncio
 import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -59,6 +60,8 @@ from modules.planning.asset_registry import reset_registry
 from modules.planning.profile_context import format_learner_context
 
 from modules.retrieval.pageindex_retriever import (
+    clear_artifacts_cache,
+    list_documents,
     retrieve_curriculum_context,
     retrieve_curriculum_sections,
 )
@@ -102,16 +105,24 @@ class LearnerProfilePayload(BaseModel):
 class PipelineRunRequest(BaseModel):
     topic: str
     subject: str
+    documentId: Optional[str] = None
     apiKey: Optional[str] = None
     geminiApiKey: Optional[str] = None
     nvidiaApiKey: Optional[str] = None
     learnerProfile: Optional[LearnerProfilePayload] = None
+
+
+class IndexCurriculumRequest(BaseModel):
+    filename: str
 
 # Ensure folders exist
 USER_DATA_DIR = ROOT / "data" / "user"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR = ROOT / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+CURRICULUM_RESULTS_DIR = ROOT.parent / "PageIndex" / "results"
+PAGEINDEX_ROOT = ROOT.parent / "PageIndex"
+PAGEINDEX_DOCUMENTS_DIR = PAGEINDEX_ROOT / "examples" / "documents"
 
 DEFAULT_ANALYTICS = {
     "total_sessions": 0,
@@ -329,6 +340,7 @@ async def run_pipeline_task(
     nvidia_api_key: str | None = None,
     learner_profile: Optional[Dict[str, Any]] = None,
     subject: str = "Physics",
+    document_id: str | None = None,
 ):
     job = ACTIVE_JOBS.get(session_id)
     if not job:
@@ -371,8 +383,9 @@ async def run_pipeline_task(
     try:
         # --- Stage 0: Retrieve curriculum context ---
         await queue.put({"stage": "retrieving", "progress": 5, "message": "Searching curriculum structure and textbook evidence..."})
-        curriculum_sections = retrieve_curriculum_sections(topic)
-        curriculum_context = retrieve_curriculum_context(topic)
+        logger.info("Curriculum retrieval topic=%r document_id=%r", topic, document_id)
+        curriculum_sections = retrieve_curriculum_sections(topic, document_id=document_id)
+        curriculum_context = retrieve_curriculum_context(topic, document_id=document_id)
         logger.info(
             "Retrieved %d curriculum sections",
             len(curriculum_sections)
@@ -657,6 +670,7 @@ async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTa
     ACTIVE_JOBS[session_id] = {
         "topic": req.topic,
         "subject": req.subject,
+        "document_id": req.documentId,
         "api_key": req.apiKey,
         "gemini_api_key": req.geminiApiKey,
         "nvidia_api_key": req.nvidiaApiKey,
@@ -674,6 +688,7 @@ async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTa
         req.nvidiaApiKey,
         learner_profile_dict,
         req.subject,
+        req.documentId,
     )
 
     return {"sessionId": session_id, "resolvedTopic": req.topic}
@@ -697,6 +712,58 @@ async def get_pipeline_status(session_id: str):
                 break
                 
     return StreamingResponse(sse_event_generator(), media_type="text/event-stream")
+
+@app.get("/api/curriculum/documents")
+async def curriculum_documents():
+    return {"documents": list_documents()}
+
+
+@app.post("/api/curriculum/index")
+async def curriculum_index(req: IndexCurriculumRequest):
+    filename = req.filename.strip()
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    pdf_path = PAGEINDEX_DOCUMENTS_DIR / filename
+    if not pdf_path.is_file():
+        raise HTTPException(status_code=404, detail=f"PDF not found in examples/documents: {filename}")
+
+    script_path = PAGEINDEX_ROOT / "run_pageindex.py"
+    if not script_path.is_file():
+        raise HTTPException(status_code=500, detail="PageIndex run_pageindex.py not found")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            [
+                sys.executable,
+                str(script_path),
+                "--pdf_path",
+                str(pdf_path),
+                "--force-reindex",
+            ],
+            cwd=str(PAGEINDEX_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=3600,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Indexing failed: {e}") from e
+
+    if result.returncode != 0:
+        tail = (result.stderr or result.stdout or "")[-2000:]
+        raise HTTPException(status_code=500, detail=f"PageIndex exited with {result.returncode}: {tail}")
+
+    clear_artifacts_cache()
+    return {
+        "status": "indexed",
+        "filename": filename,
+        "stdout_tail": (result.stdout or "")[-1500:],
+    }
+
 
 @app.get("/api/pageindex/health")
 async def pageindex_health():
@@ -763,7 +830,8 @@ async def health_check():
 
 # Mount static folders for generated assets
 app.mount("/generated", StaticFiles(directory=str(ROOT / "data" / "renders")), name="generated")
-app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
+_results_mount = CURRICULUM_RESULTS_DIR if CURRICULUM_RESULTS_DIR.is_dir() else RESULTS_DIR
+app.mount("/results", StaticFiles(directory=str(_results_mount)), name="results")
 
 if __name__ == "__main__":
     import uvicorn

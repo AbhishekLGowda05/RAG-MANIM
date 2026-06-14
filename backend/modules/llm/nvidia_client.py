@@ -11,7 +11,7 @@ from typing import Any
 import requests
 import google.generativeai as genai
 
-from modules.config import NVIDIA_API_KEY, get_logger
+from modules.config import GEMINI_API_KEY, NVIDIA_API_KEY, get_logger
 
 logger = get_logger(__name__)
 
@@ -23,9 +23,14 @@ class NvidiaClient:
 
     def __init__(self, max_retries: int = 3) -> None:
         self.max_retries = max_retries
-        # Dynamically fetch key to avoid module-load caching
+        # Dynamically fetch keys to avoid module-load caching
         self.nvidia_api_key = os.getenv("NVIDIA_API_KEY") or NVIDIA_API_KEY
-        
+        self.gemini_api_key = (
+            os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+            or GEMINI_API_KEY
+        )
+
         if not self.nvidia_api_key and not self.gemini_api_key:
             logger.warning("No LLM API keys found in active environmental context!")
         else:
@@ -41,7 +46,11 @@ class NvidiaClient:
     ) -> str:
         """Send a chat completion request to NVIDIA NIM, falling back to Gemini if needed."""
         self.nvidia_api_key = os.getenv("NVIDIA_API_KEY") or self.nvidia_api_key
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or self.gemini_api_key
+        self.gemini_api_key = (
+            os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+            or self.gemini_api_key
+        )
 
         # If NVIDIA_API_KEY is not set but GEMINI_API_KEY is, route directly to Gemini fallback
         if not self.nvidia_api_key and self.gemini_api_key:

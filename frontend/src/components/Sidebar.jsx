@@ -1,8 +1,10 @@
 import React from 'react';
 import { useProfile } from '../context/ProfileContext';
+import { useSession } from '../context/SessionContext';
 
 export default function Sidebar({ activeScreen, setActiveScreen }) {
   const { profile } = useProfile();
+  const { newSession } = useSession();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
@@ -60,6 +62,32 @@ export default function Sidebar({ activeScreen, setActiveScreen }) {
 
       {/* Main Navigation Item List */}
       <div style={{ flex: 1, padding: 'var(--space-4) var(--space-3)', display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto' }}>
+        <button
+          onClick={async () => {
+            await newSession();
+            setActiveScreen('workspace');
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 'var(--space-2)',
+            padding: 'var(--space-3) var(--space-4)',
+            marginBottom: 'var(--space-2)',
+            borderRadius: 'var(--r-md)',
+            color: 'var(--text-primary)',
+            background: 'var(--bg-raised)',
+            border: '1px solid var(--border-default)',
+            fontFamily: 'var(--font-ui)',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          <span style={{ fontSize: '16px' }}>＋</span>
+          <span>New Lesson</span>
+        </button>
+
         {navItems.map(item => {
           const isActive = activeScreen === item.id;
           return (

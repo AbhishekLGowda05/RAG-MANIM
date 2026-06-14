@@ -170,7 +170,33 @@ Do you want me to derive the mathematical equality or show another visual analog
     }
   };
 
-  const startPipeline = async (query, subject = 'Physics') => {
+  const newSession = async () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    if (notesSaveTimeoutRef.current) {
+      clearTimeout(notesSaveTimeoutRef.current);
+      notesSaveTimeoutRef.current = null;
+    }
+    setSession({ ...DEFAULT_SESSION });
+    setActiveStageMsg('');
+    setActiveProgress(0);
+    try {
+      await fetch('/api/persist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: 'session.json',
+          payload: DEFAULT_SESSION,
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to clear workspace session:', err);
+    }
+  };
+
+  const startPipeline = async (query, subject = 'Physics', documentId = null) => {
     // Reset previous pipeline
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -194,6 +220,7 @@ Do you want me to derive the mathematical equality or show another visual analog
         body: JSON.stringify({
           topic: query,
           subject,
+          documentId,
           apiKey: geminiApiKey || nvidiaApiKey,
           geminiApiKey,
           nvidiaApiKey,
@@ -343,6 +370,7 @@ Do you want me to derive the mathematical equality or show another visual analog
       updateNotes,
       addChatMessage,
       startPipeline,
+      newSession,
       loadSessionById,
       activeStageMsg,
       activeProgress

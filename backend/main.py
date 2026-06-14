@@ -30,6 +30,7 @@ from modules.planning.asset_registry import reset_registry
 from modules.planning.narration_writer import write_all_narrations
 from modules.planning.semantic_plan import build_all_semantic_plans
 from modules.planning.storyboard import build_storyboard
+from modules.retrieval.pageindex_retriever import retrieve_curriculum
 from modules.sync.sync_engine import synchronize_all
 from modules.tts.piper_tts import synthesize
 from modules.video.ffmpeg_merge import merge
@@ -39,29 +40,60 @@ logger = get_logger("main")
 DEFAULT_TOPIC = "Explain Newton's First Law"
 
 
-def run(topic: str) -> Path:
+def run(topic: str, document_id: str | None = None, subject: str = "Physics") -> Path:
     """Execute the full semantic video generation pipeline."""
     logger.info("=" * 60)
     logger.info("Topic2Manim  |  Semantic Architecture")
     logger.info("Topic: %s", topic)
+    if document_id:
+        logger.info("Document: %s", document_id)
     logger.info("=" * 60)
 
     ensure_api_keys()
+
+    curriculum = retrieve_curriculum(topic, document_id=document_id)
+    curriculum_context = curriculum.get("context_text", "")
+    curriculum_sections = curriculum.get("sections", [])
+    if curriculum.get("matched"):
+        logger.info(
+            "Retrieved %d curriculum sections from %s",
+            len(curriculum_sections),
+            curriculum.get("document_id"),
+        )
+    else:
+        logger.warning("No curriculum match for topic=%r document_id=%r", topic, document_id)
 
     # Fresh asset registry for this run
     reset_registry()
 
     # ── Step 1: Storyboard ────────────────────────────────────────────
     logger.info("[1/8] Building storyboard (5-scene concept arc)")
-    storyboard = build_storyboard(topic)
+    storyboard = build_storyboard(
+        topic,
+        curriculum_context=curriculum_context,
+        curriculum_sections=curriculum_sections,
+        subject=subject,
+    )
 
     # ── Step 2: Semantic plans ────────────────────────────────────────
     logger.info("[2/8] Building semantic plans (template slots + event anchors)")
-    plans = build_all_semantic_plans(storyboard)
+    plans = build_all_semantic_plans(
+        storyboard,
+        curriculum_context=curriculum_context,
+        curriculum_sections=curriculum_sections,
+        topic=topic,
+        subject=subject,
+    )
 
     # ── Step 3: Narration ─────────────────────────────────────────────
     logger.info("[3/8] Writing narrations (anchor phrases embedded verbatim)")
-    plans = write_all_narrations(plans)
+    plans = write_all_narrations(
+        plans,
+        curriculum_context=curriculum_context,
+        curriculum_sections=curriculum_sections,
+        topic=topic,
+        subject=subject,
+    )
 
     # ── Step 4: TTS ───────────────────────────────────────────────────
     logger.info("[4/8] Synthesizing narration audio (Piper TTS)")
@@ -109,9 +141,20 @@ def main() -> None:
         default=DEFAULT_TOPIC,
         help=f'Topic to explain (default: "{DEFAULT_TOPIC}")',
     )
+    parser.add_argument(
+        "--document-id",
+        dest="document_id",
+        default=None,
+        help="PageIndex results folder name (e.g. Chemistry.pdf)",
+    )
+    parser.add_argument(
+        "--subject",
+        default="Physics",
+        help="Subject label for planners (default: Physics)",
+    )
     args = parser.parse_args()
     try:
-        run(args.topic)
+        run(args.topic, document_id=args.document_id, subject=args.subject)
     except Exception as exc:
         logger.error("Pipeline failed: %s", exc, exc_info=True)
         sys.exit(1)
