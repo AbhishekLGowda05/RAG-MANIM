@@ -19,6 +19,7 @@ from typing import Any
 
 from modules.config import NVIDIA_PLANNER_MODEL, get_logger
 from modules.llm.nvidia_client import NvidiaClient
+from modules.manim.code_sanitize import has_latex_mobjects, strip_latex_mobjects
 
 logger = get_logger(__name__)
 
@@ -31,12 +32,16 @@ HARD RULES:
 - Define exactly: `class GeneratedScene(Scene):` with `construct(self)`.
 - First line of construct: `self.camera.background_color = "#0f1117"`.
 - Do NOT import or subclass VoiceoverScene. Do NOT use add_sound, SVGMobject, ImageMobject, or external files.
-- Only Manim built-ins: Text, MathTex, Arrow, Line, Rectangle, Circle, Dot, VGroup, Axes, NumberPlane, ParametricFunction, ValueTracker, always_redraw, Create, Write, FadeIn, FadeOut, Transform, GrowArrow, MoveAlongPath, ReplacementTransform, AnimationGroup.
+- Only Manim built-ins: Text, Arrow, Line, Rectangle, Circle, Dot, VGroup, Axes, NumberPlane, ParametricFunction, ValueTracker, always_redraw, Create, Write, FadeIn, FadeOut, Transform, GrowArrow, MoveAlongPath, ReplacementTransform, AnimationGroup, LaggedStart.
+- NEVER use MathTex or Tex (LaTeX is not available). Use Text() for equations, e.g. Text("W = F × d").
 - Keep total animation time CLOSE TO the requested audio duration (use self.wait(...) to pad).
-- Title goes to_edge(UP, buff=0.3); equations near DOWN.
+- SAFE AREA: keep all mobjects within x in [-6.6, 6.6] and y in [-3.6, 3.6]. Title band at y≈3.2; captions at y≈-3.2.
+- Title: one line, to_edge(UP, buff=0.35), use scale_to_fit_width(12.0) if long.
+- Body text: use Text(..., width=5.0) for wrapping or scale_to_fit_width before placing.
+- Use .next_to or .arrange with buff>=0.4. Never stack overlapping labels.
+- Prefer LaggedStart(..., lag_ratio=0.15) and rate_func=smooth for reveals.
 - Use color hexes: title "#e0e6f0", body "#c8d3e6", accents "#4f8ef7" / "#41d4a8" / "#ff7a59".
 - End with: `self.play(FadeOut(*self.mobjects), run_time=0.40)`.
-- Avoid overlapping mobjects. Use .next_to or .arrange with buff>=0.4.
 - Never use .get_edge(); use .get_left/right/top/bottom().
 """
 
@@ -60,7 +65,7 @@ DESIGN GUIDELINES:
 - Build a UNIQUE visual specific to this scene's anchor example — do NOT reuse the same diagram across scenes.
 - Show 1-3 distinct visual stages tied to the narration beats.
 - For abstract concepts, use diagrams, arrows, transitions, or labeled symbols — not just text.
-- Equations: use MathTex only if the topic warrants it for this learner's level.
+- Equations: use Text() with Unicode symbols (×, Δ, θ) — never MathTex/Tex.
 - Prefer FadeIn/Write for entrances, Transform for evolutions, FadeOut between stages.
 
 Return ONLY the complete Python file.
@@ -120,6 +125,8 @@ class FreeformTemplate:
 
         code = _strip_fences(text).strip()
         code = _sanitize(code)
+        if has_latex_mobjects(code):
+            code = strip_latex_mobjects(code)
         if "class GeneratedScene" not in code or "def construct" not in code:
             logger.warning("Freeform output invalid for scene %s; using stub", scene_id)
             return _stub_scene(title, learning_goal, audio_duration)

@@ -26,19 +26,22 @@ class DiagramScene(Scene):
         labels = self._normalize_nodes(nodes)
 
         title = Text(
-            str(title_text)[:60],
+            str(title_text)[:80],
             font=TITLE_FONT,
-            font_size=36,
+            font_size=34,
             color=CHALK_WHITE,
             weight=BOLD,
-        ).to_edge(UP, buff=0.4)
-        self.play(Write(title), run_time=0.8)
+        )
+        fit_title(title, SAFE_W - 0.6)
+        title.move_to(np.array([0, TITLE_BAND_Y, 0]))
+        self.play(Write(title), run_time=0.8, rate_func=smooth)
 
         n = len(labels)
+        max_span = SAFE_W - 1.5
         if n <= 4:
             positions = [
-                np.array([x, -0.3, 0])
-                for x in np.linspace(-4.5, 4.5, n)
+                np.array([x, CONTENT_CENTER_Y - 0.2, 0])
+                for x in np.linspace(-max_span / 2, max_span / 2, n)
             ]
         else:
             cols = min(4, n)
@@ -48,20 +51,20 @@ class DiagramScene(Scene):
                 row, col = divmod(i, cols)
                 positions.append(
                     np.array([
-                        -4.5 + col * (9.0 / max(cols - 1, 1)),
-                        1.0 - row * 1.8,
+                        -max_span / 2 + col * (max_span / max(cols - 1, 1)),
+                        0.8 - row * 1.6,
                         0,
                     ])
                 )
 
         objects = []
         for label, pos in zip(labels, positions):
-            circle = Circle(radius=0.55, color=CHALK_BLUE, stroke_width=2)
+            circle = Circle(radius=0.5, color=CHALK_BLUE, stroke_width=2)
             circle.set_fill(CHALK_BLUE, opacity=0.15)
-            label_mob = Text(
-                str(label)[:24],
-                font=BODY_FONT,
-                font_size=18,
+            label_mob = wrapped_text(
+                str(label)[:28],
+                font_size=16,
+                max_w=0.9,
                 color=CHALK_WHITE,
             )
             group = VGroup(circle, label_mob)
@@ -69,9 +72,13 @@ class DiagramScene(Scene):
             objects.append(group)
 
         graph = VGroup(*objects)
+        fit_in_box(graph, SAFE_W - 0.5, SAFE_H - 2.0)
+        graph.move_to(np.array([0, CONTENT_CENTER_Y - 0.25, 0]))
+
         self.play(
-            LaggedStart(*[FadeIn(o, scale=0.8) for o in graph], lag_ratio=0.25),
-            run_time=min(2.5, 0.4 * n + 0.5),
+            LaggedStart(*[FadeIn(o, scale=0.85) for o in graph], lag_ratio=0.2),
+            run_time=min(2.5, 0.45 * n + 0.5),
+            rate_func=smooth,
         )
 
         if len(objects) >= 2:
@@ -81,7 +88,7 @@ class DiagramScene(Scene):
                     objects[i + 1].get_left(),
                     color=CHALK_YELLOW,
                     stroke_width=2,
-                    buff=0.15,
+                    buff=0.12,
                     max_tip_length_to_length_ratio=0.2,
                 )
                 for i in range(len(objects) - 1)
@@ -89,6 +96,7 @@ class DiagramScene(Scene):
             self.play(
                 LaggedStart(*[GrowArrow(a) for a in arrows], lag_ratio=0.2),
                 run_time=0.8,
+                rate_func=smooth,
             )
 
         tail = max(0.5, audio_duration - 3.0) if audio_duration > 0 else 1.5

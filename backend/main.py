@@ -51,7 +51,7 @@ def run(topic: str, document_id: str | None = None, subject: str = "Physics") ->
 
     ensure_api_keys()
 
-    curriculum = retrieve_curriculum(topic, document_id=document_id)
+    curriculum = retrieve_curriculum(topic, document_id=document_id, subject=subject)
     curriculum_context = curriculum.get("context_text", "")
     curriculum_sections = curriculum.get("sections", [])
     if curriculum.get("matched"):

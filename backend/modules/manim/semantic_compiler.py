@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from modules.config import PATHS, get_logger
+from modules.manim.code_sanitize import has_latex_mobjects, strip_latex_mobjects
 from modules.templates import TEMPLATES
 
 logger = get_logger(__name__)
@@ -217,6 +218,12 @@ def _post_process(code: str, scene_id: int) -> str:
 
     _warn_primitives(code, scene_id)
     code = _sanitize_manim_antipatterns(code, scene_id)
+    if has_latex_mobjects(code):
+        logger.warning(
+            "Scene %d: replacing MathTex/Tex with Text (LaTeX may be unavailable)",
+            scene_id,
+        )
+        code = strip_latex_mobjects(code)
     return code
 
 

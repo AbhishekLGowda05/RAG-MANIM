@@ -102,11 +102,14 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
 
         n_protons  = atomic_z
         n_neutrons = max(0, mass_num - atomic_z)
+        if n_protons <= 0 and n_neutrons <= 0:
+            n_protons = 1
+            n_neutrons = 1
 
-        # Layout
-        cx, cy     = 0.0, 0.1
+        # Layout — scaled to fit safe area after grouping
+        cx, cy     = 0.0, 0.0
         nucleus_r  = 0.38
-        shell_gap  = 0.72   # radial gap between shells
+        shell_gap  = 0.65
         shell_radii = [nucleus_r + shell_gap * (i + 1) for i in range(len(shells))]
 
         _evs = plan.get("events", [])
@@ -124,10 +127,19 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
 
         lines: list[str] = [_HEADER]
 
+        lines += [
+            '        from modules.manim.style_config import (',
+            '            fit_title, fit_in_box, SAFE_W, SAFE_H,',
+            '            TITLE_BAND_Y, CAPTION_BAND_Y, CONTENT_CENTER_Y,',
+            '        )',
+            "",
+        ]
+
         # ── Title ──────────────────────────────────────────────────
         lines += [
-            f'        title = Text("{_esc(title_text)}", font_size=38, weight=BOLD, color="{TITLE_COLOR}")',
-            f'        title.to_edge(UP, buff=0.3)',
+            f'        title = Text("{_esc(title_text)}", font_size=36, weight=BOLD, color="{TITLE_COLOR}")',
+            f'        fit_title(title, SAFE_W - 0.6)',
+            f'        title.move_to(np.array([0, TITLE_BAND_Y, 0]))',
             "",
         ]
 
@@ -152,8 +164,15 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
         proton_vars  = [f'p_{i}' for i, (_, _, isp) in enumerate(cluster_positions[:16]) if isp]
         neutron_vars = [f'n_{i}' for i, (_, _, isp) in enumerate(cluster_positions[:16]) if not isp]
         all_nuc = proton_vars + neutron_vars
-        nuc_group = ", ".join(all_nuc) if all_nuc else "nucleus_bg"
-        lines += [f'        nucleus_grp = VGroup(nucleus_bg, {nuc_group})', ""]
+        if all_nuc:
+            lines += [f'        nucleus_grp = VGroup(nucleus_bg, {", ".join(all_nuc)})']
+        else:
+            lines += [
+                '        nuc_placeholder = Dot(radius=0.12, color="' + NUCLEUS_COLOR + '", fill_opacity=0.9)',
+                f'        nuc_placeholder.move_to(np.array([{cx:.2f}, {cy:.2f}, 0]))',
+                '        nucleus_grp = VGroup(nucleus_bg, nuc_placeholder)',
+            ]
+        lines.append("")
 
         # ── Electron Shells (dashed circles) ───────────────────────
         for i, r in enumerate(shell_radii):
@@ -184,12 +203,12 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
             electron_vars.append(shell_evars)
         lines.append("")
 
-        # Shell number labels
+        # Shell number labels (at top of each ring)
         for si, r in enumerate(shell_radii):
-            lx = cx + r + 0.15
-            ly = cy
+            lx = cx
+            ly = cy + r + 0.14
             lines += [
-                f'        shell_lbl_{si} = Text("n={si+1}", font_size=16, color="{LABEL_COLOR}")',
+                f'        shell_lbl_{si} = Text("n={si+1}", font_size=15, color="{LABEL_COLOR}")',
                 f'        shell_lbl_{si}.move_to(np.array([{lx:.3f}, {ly:.3f}, 0]))',
                 f'        shell_lbl_{si}.set_opacity(0)',
             ]
@@ -206,8 +225,9 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
 
         # ── Electron config text ───────────────────────────────────
         lines += [
-            f'        config_text = Text("{_esc(config_str)}", font_size=24, color="{ACCENT2}")',
-            f'        config_text.to_edge(DOWN, buff=0.55)',
+            f'        config_text = Text("{_esc(config_str)}", font_size=22, color="{ACCENT2}")',
+            f'        fit_title(config_text, SAFE_W - 1.0)',
+            f'        config_text.move_to(np.array([0, CAPTION_BAND_Y, 0]))',
             f'        config_text.set_opacity(0)',
             "",
         ]
@@ -216,11 +236,31 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
         val_r = shell_radii[-1] if shell_radii else nucleus_r + shell_gap
         lines += [
             f'        valence_glow = Circle(radius={val_r:.3f}, color="{ACCENT3}",'
-            f' stroke_width=3.5, stroke_opacity=0.0)',
+            f' stroke_width=3.0, stroke_opacity=0.0)',
             f'        valence_glow.move_to(np.array([{cx:.2f}, {cy:.2f}, 0]))',
-            f'        valence_lbl = Text("valence shell", font_size=18, color="{ACCENT3}")',
-            f'        valence_lbl.next_to(valence_glow, RIGHT, buff=0.1)',
+            f'        valence_lbl = Text("valence shell", font_size=16, color="{ACCENT3}")',
+            f'        valence_lbl.move_to(np.array([0, CAPTION_BAND_Y + 0.55, 0]))',
             f'        valence_lbl.set_opacity(0)',
+            "",
+        ]
+
+        # ── Fit atom visual into safe content region ────────────────
+        shell_names = ", ".join(f"shell_{i}" for i in range(len(shell_radii)))
+        lbl_names = ", ".join(f"shell_lbl_{i}" for i in range(len(shell_radii)))
+        elec_flat = ", ".join(v for ev in electron_vars for v in ev)
+        atom_parts = ["nucleus_grp"]
+        if shell_names:
+            atom_parts.append(f"VGroup({shell_names})")
+        if lbl_names:
+            atom_parts.append(f"VGroup({lbl_names})")
+        if elec_flat:
+            atom_parts.append(f"VGroup({elec_flat})")
+        atom_parts.append("elem_badge")
+        atom_parts.append("valence_glow")
+        lines += [
+            f'        atom_visual = VGroup({", ".join(atom_parts)})',
+            f'        fit_in_box(atom_visual, SAFE_W - 0.8, SAFE_H - 2.4)',
+            f'        atom_visual.move_to(np.array([0, CONTENT_CENTER_Y - 0.1, 0]))',
             "",
         ]
 
@@ -229,35 +269,51 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
 
         # e0: title
         lines += [
-            f'        self.play(Write(title), run_time={rt_place:.3f})',
+            f'        self.play(Write(title), run_time={rt_place:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_place
 
         # e1: nucleus
         lines += [
-            f'        self.play(FadeIn(nucleus_grp), run_time={rt_nucleus:.3f})',
+            f'        self.play(FadeIn(nucleus_grp), run_time={rt_nucleus:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_nucleus
         if hold_nuc > 0.05:
             lines += [f'        self.wait({hold_nuc:.3f})']
             elapsed += hold_nuc
 
-        # e2: shells appear one by one
-        shell_rt = rt_shells / max(len(shell_radii), 1)
-        for si in range(len(shell_radii)):
+        # e2: shells appear (batched)
+        if shell_radii:
+            for si in range(len(shell_radii)):
+                lines += [
+                    f'        shell_{si}.set_opacity(1)',
+                    f'        shell_lbl_{si}.set_opacity(1)',
+                ]
+            shell_anims = []
+            for si in range(len(shell_radii)):
+                shell_anims.append(f'Create(shell_{si})')
+                shell_anims.append(f'FadeIn(shell_lbl_{si})')
             lines += [
-                f'        shell_{si}.set_opacity(1)',
-                f'        self.play(Create(shell_{si}), FadeIn(shell_lbl_{si}), run_time={shell_rt:.3f})',
+                f'        self.play(',
+                f'            LaggedStart({", ".join(shell_anims)}, lag_ratio=0.18),',
+                f'            run_time={rt_shells:.3f}, rate_func=smooth',
+                f'        )',
             ]
         elapsed += rt_shells
 
-        # e3: electrons populate
+        # e3: electrons populate (batched)
+        elec_anims = []
         for si, evars in enumerate(electron_vars):
             if not evars:
                 continue
-            ev_list = ", ".join(evars)
+            for v in evars:
+                elec_anims.append(f'FadeIn({v})')
+        if elec_anims:
             lines += [
-                f'        self.play({", ".join(f"FadeIn({v})" for v in evars)}, run_time={rt_electrons/max(len(electron_vars),1):.3f})',
+                f'        self.play(',
+                f'            LaggedStart({", ".join(elec_anims)}, lag_ratio=0.12),',
+                f'            run_time={rt_electrons:.3f}, rate_func=smooth',
+                f'        )',
             ]
         elapsed += rt_electrons
         if hold_elec > 0.05:
@@ -267,14 +323,14 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
         # e4: element badge
         lines += [
             f'        elem_badge.set_opacity(1)',
-            f'        self.play(FadeIn(elem_badge, scale=0.6), run_time={rt_label:.3f})',
+            f'        self.play(FadeIn(elem_badge, scale=0.6), run_time={rt_label:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_label
 
         # e5: electron config
         lines += [
             f'        config_text.set_opacity(1)',
-            f'        self.play(Write(config_text), run_time={rt_config:.3f})',
+            f'        self.play(Write(config_text), run_time={rt_config:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_config
         if hold_cfg > 0.05:
@@ -283,11 +339,10 @@ Use 'generic' atom if the element is not in the list. shells must be a list of i
 
         # e6: highlight valence shell
         lines += [
-            f'        valence_glow.set_stroke(opacity=0.85)',
             f'        valence_lbl.set_opacity(1)',
             f'        self.play(',
             f'            valence_glow.animate.set_stroke(opacity=0.85),',
-            f'            FadeIn(valence_lbl), run_time={rt_valence:.3f}',
+            f'            FadeIn(valence_lbl), run_time={rt_valence:.3f}, rate_func=smooth',
             f'        )',
         ]
         elapsed += rt_valence

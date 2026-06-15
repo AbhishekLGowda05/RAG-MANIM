@@ -36,13 +36,14 @@ USE_WHISPERX = os.getenv("USE_WHISPERX", "false").lower() in ("1", "true", "yes"
 WHISPERX_MODEL = os.getenv("WHISPERX_MODEL", "base")
 WHISPERX_DEVICE = os.getenv("WHISPERX_DEVICE", "cpu")
 WHISPERX_COMPUTE_TYPE = os.getenv("WHISPERX_COMPUTE_TYPE", "int8")
-MANIM_REPAIR_TIMEOUT = int(os.getenv("MANIM_REPAIR_TIMEOUT", "45"))
+MANIM_REPAIR_TIMEOUT = int(os.getenv("MANIM_REPAIR_TIMEOUT", "30"))
+MANIM_REPAIR_MAX_CALLS = int(os.getenv("MANIM_REPAIR_MAX_CALLS", "1"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 NVIDIA_PLANNER_MODEL = os.getenv("NVIDIA_PLANNER_MODEL", "meta/llama-3.3-70b-instruct")
 NVIDIA_REPAIR_MODEL = os.getenv("NVIDIA_REPAIR_MODEL", "deepseek-ai/deepseek-r1")
 
-MANIM_QUALITY = os.getenv("MANIM_QUALITY", "-ql")
+MANIM_QUALITY = os.getenv("MANIM_QUALITY", "-qm")
 MANIM_MAX_RETRIES = int(os.getenv("MANIM_MAX_RETRIES", "3"))
 
 FINAL_VIDEO = PATHS["renders"] / "final_video.mp4"

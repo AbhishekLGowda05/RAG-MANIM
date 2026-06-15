@@ -14,7 +14,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 const _STATIC_SUBJECT_DOC_MAP = {
   Chemistry: 'Chemistry.pdf',
-  Physics: 'SCERT Kerala State Syllabus 10th Standard Physics Textbooks English Medium Part 1.pdf',
+  Physics: 'physics.pdf',
 };
 
 export default function Dashboard({ setActiveScreen }) {
@@ -40,14 +40,17 @@ export default function Dashboard({ setActiveScreen }) {
       try {
         const res = await fetch(`${BACKEND_URL}/api/curriculum/documents`);
         if (!res.ok) return;
-        const docs = await res.json();
-        const map = { ..._STATIC_SUBJECT_DOC_MAP };
+        const data = await res.json();
+        const docs = data.documents || [];
+        const map = {};
         for (const doc of docs) {
-          if (doc.subject && doc.id) {
+          if (doc.subject && doc.id && doc.indexed !== false) {
             map[doc.subject] = doc.id;
           }
         }
-        setSubjectDocMap(map);
+        if (Object.keys(map).length > 0) {
+          setSubjectDocMap(map);
+        }
       } catch (_) {
         // Fall back to static map silently.
       }

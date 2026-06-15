@@ -22,48 +22,63 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
   const activeTopic = session?.topic_resolved || 'Relativity Theory — Chapter 2';
   const activeSubject = session?.explanation_package?.subject || 'Physics';
 
-  // Compute scene tick mark positions
+  // Mock-mode duration from scene plan (real video uses element metadata instead)
   useEffect(() => {
+    if (!isMock) return;
     if (scenePlan && scenePlan.length > 0) {
       const sum = scenePlan.reduce((acc, sc) => acc + (sc.duration_seconds || 10), 0);
       setDuration(sum);
     } else {
-      setDuration(28.7); // Fallback length matching simulation
+      setDuration(28.7);
     }
-  }, [scenePlan]);
+  }, [scenePlan, isMock]);
 
-  // Reset video error when video url shifts
+  // Reset player state when the video source changes
   useEffect(() => {
     setVideoError(false);
     setCurrentTime(0);
     setIsPlaying(false);
   }, [videoUrl]);
 
-  // Native Playback Listener for actual video files
+  // Bind native <video> events — must re-run when videoUrl changes so listeners
+  // attach to the newly mounted element (ref is null on first render in mock mode).
   useEffect(() => {
+    if (isMock || videoError) return;
+
     const video = videoRef.current;
-    if (!video || videoError) return;
+    if (!video) return;
 
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
     const handleTime = () => {
       setCurrentTime(video.currentTime);
-      if (onTimeUpdate) onTimeUpdate(video.currentTime);
+      onTimeUpdate?.(video.currentTime);
     };
-    const handleDuration = () => setDuration(video.duration);
+    const handleDuration = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        setDuration(video.duration);
+      }
+    };
 
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('timeupdate', handleTime);
     video.addEventListener('durationchange', handleDuration);
+    video.addEventListener('loadedmetadata', handleDuration);
+
+    // Sync UI with element state after mount / source change
+    setIsPlaying(!video.paused);
+    setCurrentTime(video.currentTime);
+    handleDuration();
 
     return () => {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('timeupdate', handleTime);
       video.removeEventListener('durationchange', handleDuration);
+      video.removeEventListener('loadedmetadata', handleDuration);
     };
-  }, [onTimeUpdate, videoError]);
+  }, [videoUrl, isMock, videoError, onTimeUpdate]);
 
   // 60FPS Fallback Animation clock ticking
   useEffect(() => {
@@ -93,7 +108,7 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, speed, duration, videoUrl, videoError, onTimeUpdate]);
+  }, [isPlaying, speed, duration, isMock, onTimeUpdate]);
 
   // Draw fallbacks vectors loop
   useEffect(() => {
@@ -105,28 +120,45 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
     drawCanvas(canvas, ctx, currentTime, activeTopic, activeSubject);
   }, [currentTime, activeTopic, activeSubject]);
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     if (isMock) {
-      setIsPlaying(!isPlaying);
+      setIsPlaying((prev) => !prev);
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Use element state, not React state — avoids desync when listeners were missing
+    if (video.paused) {
+      try {
+        await video.play();
+        setIsPlaying(true);
+      } catch (err) {
+        console.warn('Video playback failed:', err);
+        setIsPlaying(false);
+      }
     } else {
-      if (!videoRef.current) return;
-      if (isPlaying) videoRef.current.pause();
-      else videoRef.current.play();
+      video.pause();
+      setIsPlaying(false);
     }
   };
 
   const handleScrub = (e) => {
     const pct = parseFloat(e.target.value) / 100;
     const time = pct * duration;
-    
+
     if (isMock) {
       setCurrentTime(time);
-      if (onTimeUpdate) onTimeUpdate(time);
-    } else {
-      if (!videoRef.current) return;
-      videoRef.current.currentTime = time;
-      setCurrentTime(time);
+      onTimeUpdate?.(time);
+      return;
     }
+
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = time;
+    setCurrentTime(time);
+    onTimeUpdate?.(time);
   };
 
   const handleSpeed = (s) => {
@@ -144,15 +176,22 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
     }
   };
 
-  // Compute scene tick mark positions
   const getSceneTicks = () => {
     if (!scenePlan || !duration) return [];
+
+    const plannedTotal = scenePlan.reduce(
+      (acc, sc) => acc + (sc.duration_seconds || 10),
+      0
+    );
+    const scale = plannedTotal > 0 ? duration / plannedTotal : 1;
+
     let accTime = 0;
     return scenePlan.map((sc) => {
-      const pct = (accTime / duration) * 100;
       const sceneDuration = sc.duration_seconds || 10;
+      const startTime = accTime * scale;
+      const pct = (startTime / duration) * 100;
       accTime += sceneDuration;
-      return { ...sc, pct, startTime: accTime - sceneDuration };
+      return { ...sc, pct, startTime };
     });
   };
 
@@ -474,6 +513,8 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
         <video
           ref={videoRef}
           src={videoUrl}
+          playsInline
+          preload="metadata"
           onError={() => setVideoError(true)}
           style={{ width: '100%', aspectRatio: '16/9', display: 'block', background: '#000000' }}
           onClick={togglePlay}
@@ -537,9 +578,11 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
               onClick={() => {
                 if (isMock) {
                   setCurrentTime(t.startTime);
-                  if (onTimeUpdate) onTimeUpdate(t.startTime);
+                  onTimeUpdate?.(t.startTime);
                 } else if (videoRef.current) {
                   videoRef.current.currentTime = t.startTime;
+                  setCurrentTime(t.startTime);
+                  onTimeUpdate?.(t.startTime);
                 }
               }}
               style={{

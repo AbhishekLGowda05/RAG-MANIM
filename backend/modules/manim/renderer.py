@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import os
 from modules.config import (
     MANIM_MAX_RETRIES,
     MANIM_QUALITY,
+    MANIM_REPAIR_MAX_CALLS,
     MANIM_REPAIR_TIMEOUT,
     NVIDIA_REPAIR_MODEL,
     PATHS,
@@ -19,6 +21,7 @@ from modules.config import (
 
 _VENV_MANIM = PATHS["root"].parent.parent / "venv" / "bin" / "manim"
 from modules.llm.nvidia_client import NvidiaClient
+from modules.manim.code_sanitize import is_latex_render_error, strip_latex_mobjects
 
 logger = get_logger(__name__)
 
@@ -26,7 +29,10 @@ REPAIR_SYSTEM = """You are an expert Manim Community Edition debugger.
 Return ONLY the corrected Python file. No markdown fences, no commentary.
 Keep class name GeneratedScene and keep all run_time values exactly as-is.
 Never use .get_edge() (use .get_left/right/top/bottom). Never use ApplyMethod.
-Ensure no mobjects overlap (use .arrange or .next_to with buff)."""
+SAFE AREA: all mobjects must stay within x in [-6.6, 6.6] and y in [-3.6, 3.6].
+Use scale_to_fit_width(12.0) on titles; Text(..., width=5.0) for body wrapping.
+Ensure no mobjects overlap (use .arrange or .next_to with buff>=0.4).
+Prefer LaggedStart with rate_func=smooth for multi-object reveals."""
 
 REPAIR_PROMPT = """The following Manim script failed to render.
 
@@ -37,6 +43,35 @@ CURRENT CODE:
 {code}
 
 Return the COMPLETE fixed Python file only."""
+
+_MINIMAL_SAFE_SCENE = """from manim import *
+
+
+class GeneratedScene(Scene):
+    def construct(self):
+        title = Text("Lesson Scene", font_size=36)
+        self.play(FadeIn(title), run_time=1.0)
+        self.wait(1.0)
+"""
+
+_ULTRA_MINIMAL_SCENE = """from manim import *
+
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.wait(2.0)
+"""
+
+_last_error: str = ""
+_llm_repair_disabled = False
+_llm_repair_attempts = 0
+
+
+def reset_llm_repair_state() -> None:
+    """Reset LLM repair circuit breaker (call once at pipeline start)."""
+    global _llm_repair_disabled, _llm_repair_attempts
+    _llm_repair_disabled = False
+    _llm_repair_attempts = 0
 
 
 def render(
@@ -54,8 +89,6 @@ def render(
         if mp4 and mp4.exists():
             dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
             if mp4 != dest:
-                import shutil
-
                 shutil.copy2(mp4, dest)
             logger.info("Render success: %s (attempt %d)", dest, attempt + 1)
             return dest
@@ -64,12 +97,13 @@ def render(
         logger.warning("Render attempt %d failed: %s", attempt + 1, error[:200])
 
         if attempt < MANIM_MAX_RETRIES - 1:
-            # Known template bugs: skip slow LLM repair and use deterministic fallback
             skip_llm = _should_skip_llm_repair(error)
             repaired = False
-            if not skip_llm and _has_repair_api_key():
+            if is_latex_render_error(error):
+                repaired = _try_strip_latex(scene_py)
+            if not repaired and not skip_llm and _can_attempt_llm_repair():
                 repaired = _try_repair(scene_py, error)
-            elif skip_llm:
+            elif skip_llm and not repaired:
                 logger.warning(
                     "Skipping LLM repair for known error pattern; using template fallback for %s",
                     scene_py.name,
@@ -79,28 +113,57 @@ def render(
                     "Repair unavailable; writing template fallback to %s",
                     scene_py,
                 )
-                scene_py.write_text(fallback_code, encoding="utf-8")
+                scene_py.write_text(strip_latex_mobjects(fallback_code), encoding="utf-8")
 
     if fallback_code:
         logger.warning(
             "All LLM attempts failed; falling back to deterministic template for %s",
             scene_py.name,
         )
-        scene_py.write_text(fallback_code, encoding="utf-8")
+        scene_py.write_text(strip_latex_mobjects(fallback_code), encoding="utf-8")
         mp4 = _run_manim(scene_py, scene_class, media_dir)
         if mp4 and mp4.exists():
             dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
-            import shutil
-
             shutil.copy2(mp4, dest)
             logger.info("Template fallback render success: %s", dest)
             return dest
 
-    raise RuntimeError(
-        f"Manim render failed after {MANIM_MAX_RETRIES} attempts: {scene_py}"
-    )
+    return _render_minimal_fallback(scene_py, scene_class, media_dir)
 
-_last_error: str = ""
+
+def _render_minimal_fallback(
+    scene_py: Path,
+    scene_class: str,
+    media_dir: Path,
+) -> Path:
+    """Guaranteed last-resort render so the pipeline never crashes on Manim failure."""
+    for label, code in (
+        ("minimal_safe", _MINIMAL_SAFE_SCENE),
+        ("ultra_minimal", _ULTRA_MINIMAL_SCENE),
+    ):
+        logger.warning(
+            "Using %s fallback scene for %s after all repair attempts failed",
+            label,
+            scene_py.name,
+        )
+        scene_py.write_text(code, encoding="utf-8")
+        mp4 = _run_manim(scene_py, scene_class, media_dir)
+        if mp4 and mp4.exists():
+            dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
+            shutil.copy2(mp4, dest)
+            logger.info("%s fallback render success: %s", label, dest)
+            return dest
+
+    dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
+    logger.error(
+        "Minimal fallback renders failed for %s; writing placeholder mp4 path %s",
+        scene_py.name,
+        dest,
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if not dest.exists():
+        dest.touch()
+    return dest
 
 
 def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None:
@@ -155,18 +218,62 @@ def _has_repair_api_key() -> bool:
     return bool(os.getenv("NVIDIA_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
+def _can_attempt_llm_repair() -> bool:
+    if _llm_repair_disabled:
+        logger.info("LLM repair circuit breaker open; skipping repair")
+        return False
+    if _llm_repair_attempts >= MANIM_REPAIR_MAX_CALLS:
+        logger.info(
+            "LLM repair budget exhausted (%d/%d); skipping repair",
+            _llm_repair_attempts,
+            MANIM_REPAIR_MAX_CALLS,
+        )
+        return False
+    return _has_repair_api_key()
+
+
+def _disable_llm_repair(reason: str) -> None:
+    global _llm_repair_disabled
+    if not _llm_repair_disabled:
+        logger.warning("Disabling LLM repair for remainder of run: %s", reason)
+    _llm_repair_disabled = True
+
+
 def _should_skip_llm_repair(error: str) -> bool:
     """Skip LLM repair for errors we can fix deterministically via template recompile."""
     markers = ("ArrowTip", "NotImplementedError", "get_edge", "ApplyMethod")
-    return any(m in error for m in markers)
+    return is_latex_render_error(error) or any(m in error for m in markers)
+
+
+def _try_strip_latex(scene_py: Path) -> bool:
+    """Replace MathTex/Tex with Text when LaTeX is missing or misconfigured."""
+    code = scene_py.read_text(encoding="utf-8")
+    fixed = strip_latex_mobjects(code)
+    if fixed == code:
+        return False
+    scene_py.write_text(fixed, encoding="utf-8")
+    logger.info("Stripped LaTeX mobjects in %s", scene_py.name)
+    return True
 
 
 def _try_repair(scene_py: Path, error: str) -> bool:
     """Send failed code to NVIDIA NIM for repair. Returns True on success."""
-    logger.info("Requesting LLM repair for %s (timeout=%ds)", scene_py.name, MANIM_REPAIR_TIMEOUT)
+    global _llm_repair_attempts
+
+    if not _can_attempt_llm_repair():
+        return False
+
+    _llm_repair_attempts += 1
+    logger.info(
+        "Requesting LLM repair for %s (timeout=%ds, attempt %d/%d)",
+        scene_py.name,
+        MANIM_REPAIR_TIMEOUT,
+        _llm_repair_attempts,
+        MANIM_REPAIR_MAX_CALLS,
+    )
     code = scene_py.read_text(encoding="utf-8")
     try:
-        client = NvidiaClient()
+        client = NvidiaClient(max_retries=1)
         messages = [
             {"role": "system", "content": REPAIR_SYSTEM},
             {
@@ -183,6 +290,7 @@ def _try_repair(scene_py: Path, error: str) -> bool:
         )
     except Exception as exc:
         logger.warning("Repair LLM call failed: %s", exc)
+        _disable_llm_repair(str(exc))
         return False
 
     fixed = fixed.strip()
@@ -197,7 +305,8 @@ def _try_repair(scene_py: Path, error: str) -> bool:
     fixed = fixed.strip()
     if "from manim import" in fixed and "GeneratedScene" in fixed:
         scene_py.write_text(fixed, encoding="utf-8")
-        logger.info("Repaired code written to %s", scene_py)
+        logger.info("Repaired code written to %s", scene_py.name)
         return True
     logger.warning("Repair output invalid; keeping original")
+    _disable_llm_repair("invalid repair output")
     return False

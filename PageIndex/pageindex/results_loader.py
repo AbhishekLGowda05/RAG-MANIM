@@ -22,6 +22,8 @@ ARTIFACT_FILES = (
     "semantic_validation.json",
     "pipeline_metrics.json",
     "summary_cache.json",
+    "concept_graph.json",
+    "pedagogical_metadata.json",
 )
 
 
@@ -110,3 +112,57 @@ class DocumentArtifacts:
             chunks.append(block)
             total += len(block)
         return "\n\n".join(chunks)
+
+    def concept_graph(self) -> dict:
+        """Load concept_graph.json or return empty dict."""
+        return self.load("concept_graph.json") or {}
+
+    def pedagogical_metadata(self) -> dict:
+        """Load pedagogical_metadata.json or return empty dict."""
+        return self.load("pedagogical_metadata.json") or {}
+
+    def prerequisites_for(self, node_id: str) -> List[dict]:
+        """Return prerequisite nodes for *node_id* (edges where to == node_id)."""
+        graph = self.concept_graph()
+        if not node_id or not graph:
+            return []
+        id_to_node = {n.get("node_id"): n for n in self.walk_nodes() if n.get("node_id")}
+        title_map = {n.get("node_id"): n.get("title") for n in graph.get("nodes") or []}
+        out: List[dict] = []
+        for edge in graph.get("edges") or []:
+            if edge.get("to") != node_id or edge.get("relation") != "prerequisite":
+                continue
+            fid = edge.get("from")
+            if not fid:
+                continue
+            node = id_to_node.get(fid) or {}
+            out.append({
+                "node_id": fid,
+                "title": title_map.get(fid) or node.get("title") or fid,
+                "source": edge.get("source"),
+                "reason": edge.get("reason", ""),
+            })
+        return out
+
+    def dependents_of(self, node_id: str) -> List[dict]:
+        """Return nodes that list *node_id* as a prerequisite (edges where from == node_id)."""
+        graph = self.concept_graph()
+        if not node_id or not graph:
+            return []
+        id_to_node = {n.get("node_id"): n for n in self.walk_nodes() if n.get("node_id")}
+        title_map = {n.get("node_id"): n.get("title") for n in graph.get("nodes") or []}
+        out: List[dict] = []
+        for edge in graph.get("edges") or []:
+            if edge.get("from") != node_id or edge.get("relation") != "prerequisite":
+                continue
+            tid = edge.get("to")
+            if not tid:
+                continue
+            node = id_to_node.get(tid) or {}
+            out.append({
+                "node_id": tid,
+                "title": title_map.get(tid) or node.get("title") or tid,
+                "source": edge.get("source"),
+                "reason": edge.get("reason", ""),
+            })
+        return out

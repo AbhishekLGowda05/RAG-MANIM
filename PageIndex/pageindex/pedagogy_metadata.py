@@ -30,6 +30,32 @@ _TERM_TO_TAG = {
     "orbit": "atomic-orbitals",
     "shell": "electron-shells",
     "table": "reference-table",
+    # Physics — mechanics & measurement
+    "force": "forces",
+    "motion": "kinematics",
+    "velocity": "kinematics",
+    "acceleration": "kinematics",
+    "momentum": "momentum",
+    "energy": "energy",
+    "work": "work-energy",
+    "power": "power",
+    "gravitation": "gravitation",
+    "gravity": "gravitation",
+    "torque": "rotational-motion",
+    "rotation": "rotational-motion",
+    "vector": "vectors",
+    "projectile": "projectile-motion",
+    "satellite": "satellites",
+    "kepler": "gravitation",
+    "newton": "laws-of-motion",
+    "friction": "friction",
+    "inertia": "inertia",
+    "dimension": "dimensional-analysis",
+    "measurement": "measurement",
+    "unit": "units",
+    "collision": "collisions",
+    "equilibrium": "equilibrium",
+    "circular": "circular-motion",
 }
 
 _VISUALIZABLE_OBJECTS = [
@@ -47,6 +73,20 @@ _VISUALIZABLE_OBJECTS = [
     ("orbit", "electron orbit diagram"),
     ("shell", "electron shell diagram"),
     ("isotope", "isotope comparison"),
+    # Physics
+    ("velocity-time", "velocity-time graph"),
+    ("position-time", "position-time graph"),
+    ("free body", "free body diagram"),
+    ("projectile", "projectile trajectory"),
+    ("vector", "vector diagram"),
+    ("torque", "torque diagram"),
+    ("satellite", "satellite orbit"),
+    ("gravitational", "gravitational field"),
+    ("kepler", "planetary orbit"),
+    ("spring", "spring-mass system"),
+    ("collision", "collision diagram"),
+    ("rotational", "rotating rigid body"),
+    ("centripetal", "circular motion diagram"),
 ]
 
 
@@ -107,7 +147,22 @@ def derive_visualizable_elements(
     return found[:6]
 
 
-def enrich_node_metadata(node: dict, child_titles: Optional[List[str]] = None) -> None:
+def default_grade_for_domain(domain: Optional[str] = None, doc_name: str = "") -> str:
+    """Return a sensible default grade label from domain or document name."""
+    blob = f"{domain or ''} {doc_name}".lower()
+    if "physics" in blob:
+        return "Class XI"
+    if "chemistry" in blob or "chem" in blob:
+        return "Class X"
+    return "Class IX"
+
+
+def enrich_node_metadata(
+    node: dict,
+    child_titles: Optional[List[str]] = None,
+    *,
+    grade_appropriateness: Optional[str] = None,
+) -> None:
     """Populate semantic_tags, learning_objectives, visualizable_elements on a node."""
     title = node.get("title") or ""
     keywords = node.get("keywords") or []
@@ -121,4 +176,4 @@ def enrich_node_metadata(node: dict, child_titles: Optional[List[str]] = None) -
     if not node.get("visualizable_elements"):
         node["visualizable_elements"] = derive_visualizable_elements(text, keywords, title)
     if not node.get("grade_appropriateness"):
-        node["grade_appropriateness"] = "Class IX"
+        node["grade_appropriateness"] = grade_appropriateness or "Class IX"

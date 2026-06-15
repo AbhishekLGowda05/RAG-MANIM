@@ -29,6 +29,7 @@ class ConceptCardScene(Scene):
         self.add(bg, dots)
 
     def make_card(self, title, content, accent_color, width=3.2, height=2.8):
+        inner_w = width - 0.5
         card_bg = RoundedRectangle(
             corner_radius=0.3,
             width=width,
@@ -38,20 +39,22 @@ class ConceptCardScene(Scene):
             stroke_color=accent_color,
             stroke_width=1.5,
         )
-        card_title = Text(
-            str(title)[:40],
-            font=TITLE_FONT,
-            font_size=26,
+        card_title = wrapped_text(
+            str(title)[:50],
+            font_size=24,
+            max_w=inner_w,
             color=accent_color,
+            font=TITLE_FONT,
             weight=BOLD,
         ).move_to(card_bg.get_top() + DOWN * 0.45)
-        card_text = Text(
-            str(content)[:120],
-            font=BODY_FONT,
-            font_size=16,
+        card_text = wrapped_text(
+            str(content)[:200],
+            font_size=15,
+            max_w=inner_w,
             color=CHALK_WHITE,
-            line_spacing=1.3,
-        ).move_to(card_bg.get_center() + DOWN * 0.25)
+            line_spacing=1.25,
+        ).move_to(card_bg.get_center() + DOWN * 0.2)
+        fit_in_box(VGroup(card_title, card_text), inner_w, height - 0.9)
         return VGroup(card_bg, card_title, card_text)
 
     def build_scene(self, main_title: str, cards: list, audio_duration: float = 0.0):
@@ -64,14 +67,16 @@ class ConceptCardScene(Scene):
 
         outer_box = RoundedRectangle(
             corner_radius=0.4,
-            width=13,
-            height=7.2,
+            width=SAFE_W,
+            height=SAFE_H - 0.2,
             fill_opacity=0,
             stroke_color=CARD_BORDER,
             stroke_width=1,
         )
-        title = chalk_title(str(main_title)[:60]).to_edge(UP, buff=0.4)
-        self.play(DrawBorderThenFill(outer_box), Write(title), run_time=1.0)
+        title = chalk_title(str(main_title)[:80])
+        fit_title(title, SAFE_W - 0.6)
+        title.move_to(np.array([0, TITLE_BAND_Y, 0]))
+        self.play(DrawBorderThenFill(outer_box), Write(title), run_time=1.0, rate_func=smooth)
 
         normalized = []
         for i, c in enumerate(cards[:4]):
@@ -88,10 +93,17 @@ class ConceptCardScene(Scene):
                     "color": _DEFAULT_COLORS[i % len(_DEFAULT_COLORS)],
                 })
 
+        n = len(normalized)
+        buff = 0.35
+        card_w = min(3.4, (SAFE_W - buff * (n - 1)) / max(n, 1))
+        card_h = min(2.8, SAFE_H - 2.2)
+
         card_group = VGroup(*[
-            self.make_card(c["title"], c["content"], c["color"])
+            self.make_card(c["title"], c["content"], c["color"], width=card_w, height=card_h)
             for c in normalized
-        ]).arrange(RIGHT, buff=0.4).move_to(ORIGIN + DOWN * 0.3)
+        ]).arrange(RIGHT, buff=buff)
+        fit_in_box(card_group, SAFE_W - 0.5, SAFE_H - 2.0)
+        card_group.move_to(np.array([0, CONTENT_CENTER_Y - 0.2, 0]))
 
         arrows = VGroup(*[
             Arrow(
@@ -104,10 +116,20 @@ class ConceptCardScene(Scene):
             for i in range(len(card_group) - 1)
         ])
 
-        for i, card in enumerate(card_group):
-            self.play(FadeIn(card, shift=UP * 0.3), run_time=0.6)
-            if i < len(arrows):
-                self.play(GrowArrow(arrows[i]), run_time=0.4)
+        self.play(
+            LaggedStart(
+                *[FadeIn(card, shift=UP * 0.2) for card in card_group],
+                lag_ratio=0.15,
+            ),
+            run_time=min(2.0, 0.5 + 0.4 * n),
+            rate_func=smooth,
+        )
+        if len(arrows) > 0:
+            self.play(
+                LaggedStart(*[GrowArrow(a) for a in arrows], lag_ratio=0.2),
+                run_time=0.6,
+                rate_func=smooth,
+            )
 
         tail = max(0.5, audio_duration - 3.5) if audio_duration > 0 else 1.5
         self.wait(tail)

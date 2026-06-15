@@ -1298,6 +1298,19 @@ def page_index_main(doc, opt=None):
     log_junk_filter_stats(logger=logger, max_quality=is_max_quality())
     log_quality_path_summary(quality_level=getattr(opt, "quality_level", "fast"))
 
+    if getattr(opt, "build_concept_graph", True) and result.get("structure"):
+        try:
+            from .concept_graph import write_concept_graph
+            export_for_graph = nodes_to_children_export(result.get("structure", []))
+            write_concept_graph(
+                results_dir,
+                structure=export_for_graph,
+                doc_name=pdf_name,
+            )
+            print(f"[PageIndex] concept_graph written → {results_dir}/concept_graph.json", flush=True)
+        except Exception as cg_exc:
+            logger.error({"concept_graph_failed": str(cg_exc)})
+
     if getattr(opt, "benchmark", False):
         try:
             from .retrieve import benchmark_retrieval

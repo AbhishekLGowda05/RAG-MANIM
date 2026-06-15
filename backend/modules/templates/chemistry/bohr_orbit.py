@@ -116,13 +116,15 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
 
         n_protons  = atomic_z
         n_neutrons = max(0, int(_get("mass_number", atomic_z * 2 - 1)) - atomic_z)
+        if n_protons <= 0 and n_neutrons <= 0:
+            n_protons = 1
 
-        # Layout
-        cx, cy      = -1.0, 0.0   # atom centre (shifted left to make room for energy ladder)
-        nuc_r       = 0.32
-        shell_gap   = 0.72
+        # Layout — atom left, energy ladder right
+        cx, cy      = -2.6, 0.0
+        nuc_r       = 0.30
+        shell_gap   = 0.58
         shell_radii = [nuc_r + shell_gap * (i + 1) for i in range(n_shells)]
-        e_ladder_x  = 3.6         # energy level diagram x anchor
+        e_ladder_x  = 3.2
 
         _evs = plan.get("events", [])
         rt_place   = event_rt_type(timeline, _evs, "place",              "e0", 0.65)
@@ -143,12 +145,21 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
 
         lines: list[str] = [_HEADER]
 
+        lines += [
+            '        from modules.manim.style_config import (',
+            '            fit_title, fit_in_box, SAFE_W, SAFE_H,',
+            '            TITLE_BAND_Y, CAPTION_BAND_Y, CONTENT_CENTER_Y,',
+            '        )',
+            "",
+        ]
+
         # ── Title ──────────────────────────────────────────────────
         lines += [
-            f'        title = Text("{_esc(title_text)}", font_size=34, weight=BOLD, color="{TITLE_COLOR}")',
-            f'        title.to_edge(UP, buff=0.28)',
-            f'        bohr_credit = Text("Niels Bohr, 1913", font_size=15, color="{LABEL_COLOR}")',
-            f'        bohr_credit.next_to(title, RIGHT, buff=0.3)',
+            f'        title = Text("{_esc(title_text)}", font_size=32, weight=BOLD, color="{TITLE_COLOR}")',
+            f'        fit_title(title, SAFE_W - 2.2)',
+            f'        title.move_to(np.array([0, TITLE_BAND_Y, 0]))',
+            f'        bohr_credit = Text("Niels Bohr, 1913", font_size=14, color="{LABEL_COLOR}")',
+            f'        bohr_credit.next_to(title, DOWN, buff=0.12)',
             "",
         ]
 
@@ -175,8 +186,17 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
             _angle += math.pi * 1.236
 
         nuc_dots = ", ".join(f'nuc_dot_{i}' for i in range(min(len(_all_particles), 14)))
+        if nuc_dots:
+            lines += [
+                f'        nucleus_grp = VGroup(nucleus_bg, {nuc_dots})',
+            ]
+        else:
+            lines += [
+                f'        nuc_placeholder = Dot(radius=0.10, color="{NUCLEUS_COLOR}", fill_opacity=0.9)',
+                f'        nuc_placeholder.move_to(np.array([{cx:.3f}, {cy:.3f}, 0]))',
+                f'        nucleus_grp = VGroup(nucleus_bg, nuc_placeholder)',
+            ]
         lines += [
-            f'        nucleus_grp = VGroup(nucleus_bg, {nuc_dots})',
             f'        nucleus_grp.set_opacity(0)',
             "",
         ]
@@ -191,9 +211,8 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
                 f'        )',
                 f'        shell_{i}.move_to(np.array([{cx:.3f}, {cy:.3f}, 0]))',
                 f'        shell_{i}.set_opacity(0)',
-                f'        shell_lbl_{i} = Text("n={i+1}", font_size=16, color="{LABEL_COLOR}")',
-                f'        _lx_{i} = {cx:.3f} + {r:.4f} + 0.22',
-                f'        shell_lbl_{i}.move_to(np.array([_lx_{i}, {cy + 0.18:.3f}, 0]))',
+                f'        shell_lbl_{i} = Text("n={i+1}", font_size=14, color="{LABEL_COLOR}")',
+                f'        shell_lbl_{i}.move_to(np.array([{cx:.3f}, {cy + r + 0.12:.3f}, 0]))',
                 f'        shell_lbl_{i}.set_opacity(0)',
             ]
         lines.append("")
@@ -276,10 +295,45 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
         lines += [
             f'        summary_txt = Text(',
             f'            "Only specific energy levels are allowed — Bohr\\\'s quantum condition",',
-            f'            font_size=18, color="{ACCENT2}"',
+            f'            font_size=16, color="{ACCENT2}"',
             f'        )',
-            f'        summary_txt.to_edge(DOWN, buff=0.35)',
+            f'        fit_title(summary_txt, SAFE_W - 0.8)',
+            f'        summary_txt.move_to(np.array([0, CAPTION_BAND_Y, 0]))',
             f'        summary_txt.set_opacity(0)',
+            "",
+        ]
+
+        # ── Fit atom + ladder into safe area ───────────────────────
+        shell_names = ", ".join(f"shell_{i}" for i in range(n_shells))
+        lbl_names = ", ".join(f"shell_lbl_{i}" for i in range(n_shells))
+        elec_names = ", ".join(
+            vname for shell_data in electron_data for (_, _, vname) in shell_data
+        )
+        atom_parts = ["nucleus_grp", "sym_text"]
+        if shell_names:
+            atom_parts.append(f"VGroup({shell_names})")
+        if lbl_names:
+            atom_parts.append(f"VGroup({lbl_names})")
+        if elec_names:
+            atom_parts.append(f"VGroup({elec_names})")
+        lines += [
+            f'        atom_group = VGroup({", ".join(atom_parts)})',
+        ]
+        if show_energy:
+            elev_names = ", ".join(f"elev_grp_{ni}" for ni in range(1, n_shells + 1))
+            lines += [
+                f'        ladder_group = VGroup(elev_title, {elev_names})' + (
+                    ", trans_grp, photon_dot" if show_trans else ""
+                ),
+                f'        scene_visual = VGroup(atom_group, ladder_group)',
+            ]
+        else:
+            lines += [
+                f'        scene_visual = atom_group',
+            ]
+        lines += [
+            f'        fit_in_box(scene_visual, SAFE_W - 0.5, SAFE_H - 2.2)',
+            f'        scene_visual.move_to(np.array([0, CONTENT_CENTER_Y - 0.15, 0]))',
             "",
         ]
 
@@ -288,27 +342,36 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
 
         # e0: title
         lines += [
-            f'        self.play(Write(title), FadeIn(bohr_credit), run_time={rt_place:.3f})',
+            f'        self.play(Write(title), FadeIn(bohr_credit), run_time={rt_place:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_place
 
         # e1: nucleus
         lines += [
             f'        nucleus_grp.set_opacity(1)',
-            f'        self.play(FadeIn(nucleus_grp), run_time={rt_nuc:.3f})',
+            f'        self.play(FadeIn(nucleus_grp), run_time={rt_nuc:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_nuc
         if hold_nuc > 0.05:
             lines += [f'        self.wait({hold_nuc:.3f})']
             elapsed += hold_nuc
 
-        # e2: shells appear one at a time
-        shell_rt_each = rt_orbits / max(n_shells, 1)
-        for i in range(n_shells):
+        # e2: shells appear (batched)
+        if n_shells > 0:
+            for i in range(n_shells):
+                lines += [
+                    f'        shell_{i}.set_opacity(1)',
+                    f'        shell_lbl_{i}.set_opacity(1)',
+                ]
+            shell_anims = []
+            for i in range(n_shells):
+                shell_anims.append(f'Create(shell_{i})')
+                shell_anims.append(f'FadeIn(shell_lbl_{i})')
             lines += [
-                f'        shell_{i}.set_opacity(1)',
-                f'        shell_lbl_{i}.set_opacity(1)',
-                f'        self.play(Create(shell_{i}), FadeIn(shell_lbl_{i}), run_time={shell_rt_each:.3f})',
+                f'        self.play(',
+                f'            LaggedStart({", ".join(shell_anims)}, lag_ratio=0.18),',
+                f'            run_time={rt_orbits:.3f}, rate_func=smooth',
+                f'        )',
             ]
         elapsed += rt_orbits
         if hold_orb > 0.05:
@@ -325,8 +388,8 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
                 f'        sym_text.set_opacity(1)',
                 f'        self.play(',
                 f'            FadeIn(sym_text),',
-                *[f'            {a},' for a in elec_anims],
-                f'            run_time={rt_elec:.3f}',
+                f'            LaggedStart({", ".join(elec_anims)}, lag_ratio=0.12),',
+                f'            run_time={rt_elec:.3f}, rate_func=smooth',
                 f'        )',
             ]
         elapsed += rt_elec
@@ -347,8 +410,7 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
                 f'            _base_angle = 2 * PI * _alpha',
                 f'            for _k, _em in enumerate(_n1_elecs):',
                 f'                _theta = _base_angle + 2 * PI * _k / max(len(_n1_elecs), 1)',
-                f'                _em.move_to(np.array([{cx:.3f} + {r0:.4f} * np.cos(_theta),',
-                f'                                      {cy:.3f} + {r0:.4f} * np.sin(_theta), 0]))',
+                f'                _em.move_to(nucleus_bg.get_center() + np.array([{r0:.4f} * np.cos(_theta), {r0:.4f} * np.sin(_theta), 0]))',
                 f'        for _em in _n1_elecs:',
                 f'            _em.add_updater(_orbit_updater)',
                 f'        self.play(_orbit_tracker.animate.set_value(1.0), run_time=2.0, rate_func=linear)',
@@ -359,15 +421,19 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
 
         # e4: energy level diagram
         if show_energy:
+            for ni in range(1, n_shells + 1):
+                lines += [f'        elev_grp_{ni}.set_opacity(1)']
             lines += [
                 f'        elev_title.set_opacity(1)',
-                f'        self.play(FadeIn(elev_title), run_time=0.3)',
+                f'        self.play(FadeIn(elev_title), run_time=0.3, rate_func=smooth)',
             ]
-            for ni in range(1, n_shells + 1):
-                lines += [
-                    f'        elev_grp_{ni}.set_opacity(1)',
-                    f'        self.play(FadeIn(elev_grp_{ni}), run_time={rt_energy / max(n_shells, 1):.3f})',
-                ]
+            elev_anims = [f'FadeIn(elev_grp_{ni})' for ni in range(1, n_shells + 1)]
+            lines += [
+                f'        self.play(',
+                f'            LaggedStart({", ".join(elev_anims)}, lag_ratio=0.2),',
+                f'            run_time={rt_energy:.3f}, rate_func=smooth',
+                f'        )',
+            ]
             elapsed += rt_energy
             if hold_en > 0.05:
                 lines += [f'        self.wait({hold_en:.3f})']
@@ -377,7 +443,7 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
         if show_energy and show_trans:
             lines += [
                 f'        trans_grp.set_opacity(1)',
-                f'        self.play(GrowArrow(trans_arrow), FadeIn(trans_lbl), run_time={rt_absorb:.3f})',
+                f'        self.play(GrowArrow(trans_arrow), FadeIn(trans_lbl), run_time={rt_absorb:.3f}, rate_func=smooth)',
             ]
             elapsed += rt_absorb
             if hold_ab > 0.05:
@@ -409,7 +475,7 @@ Defaults: hydrogen atom, 2 shells [1, 0], show_transition true, absorption n=1�
         # e7: summary
         lines += [
             f'        summary_txt.set_opacity(1)',
-            f'        self.play(Write(summary_txt), run_time={rt_sum:.3f})',
+            f'        self.play(Write(summary_txt), run_time={rt_sum:.3f}, rate_func=smooth)',
         ]
         elapsed += rt_sum
         if hold_sum > 0.05:

@@ -26,7 +26,10 @@ from modules.planning.chemistry_router import (
     CHEMISTRY_TEMPLATE_IDS,
     route_chemistry_template,
 )
-from modules.retrieval.pageindex_retriever import format_sections_for_prompt
+from modules.retrieval.pageindex_retriever import (
+    format_prerequisites_for_prompt,
+    format_sections_for_prompt,
+)
 
 logger = get_logger(__name__)
 
@@ -40,6 +43,7 @@ STORYBOARD_PROMPT = """Design a 5-scene educational video arc for this topic: {t
 CURRICULUM CONTEXT:
 {curriculum_context}
 
+{prerequisite_block}
 
 IMPORTANT:
 
@@ -48,6 +52,10 @@ IMPORTANT:
 - Base scene titles, examples, explanations, formulas, and learning goals on the curriculum context whenever possible.
 
 - Do not invent concepts that are not supported by the curriculum context.
+
+- If prerequisite topics are listed above, order scenes so prerequisites are taught BEFORE dependent concepts
+  (e.g. explain Rutherford scattering before Bohr's model; discharge tube experiments before atomic models).
+  When a scene builds on a prerequisite, reference that prior concept briefly in the scene title or learning_goal.
 
 - If the curriculum context is empty, fall back to general educational knowledge.
 {learner_context}
@@ -160,16 +168,21 @@ Return ONLY the JSON array."""
 def _build_curriculum_anchor(curriculum_context: str, curriculum_sections: list | None) -> str:
     """Prepend a rich visual metadata block for tighter LLM alignment.
 
-    Uses format_sections_for_prompt to include semantic_tags and
-    visualizable_elements so the LLM can select chemistry-appropriate templates
-    and ground narration in correct textbook terminology.
+    Uses format_sections_for_prompt to include semantic_tags,
+    visualizable_elements, and prerequisites so the LLM can select
+    chemistry-appropriate templates and order scenes pedagogically.
     """
     if not curriculum_sections:
         return curriculum_context
     visual_block = format_sections_for_prompt(curriculum_sections)
+    prereq_block = format_prerequisites_for_prompt(curriculum_sections)
+    parts = [visual_block]
+    if prereq_block:
+        parts.append(prereq_block)
+    header = "\n\n".join(parts)
     if curriculum_context:
-        return f"{visual_block}\n\nDETAILED CONTEXT:\n{curriculum_context}"
-    return visual_block
+        return f"{header}\n\nDETAILED CONTEXT:\n{curriculum_context}"
+    return header
 
 
 def build_storyboard(
@@ -184,6 +197,9 @@ def build_storyboard(
     client = NvidiaClient()
 
     enriched_context = _build_curriculum_anchor(curriculum_context, curriculum_sections)
+    prerequisite_block = format_prerequisites_for_prompt(curriculum_sections or [])
+    if not prerequisite_block:
+        prerequisite_block = "(No prerequisite ordering data available.)"
 
     mechanics_middle = [
         t for t in MECHANICS_TEMPLATE_IDS if t not in ("intro", "summary")
@@ -197,6 +213,7 @@ def build_storyboard(
     prompt = STORYBOARD_PROMPT.format(
         topic=topic,
         curriculum_context=enriched_context,
+        prerequisite_block=prerequisite_block,
         learner_context=learner_context,
         mechanics_list=mechanics_list,
         explain_list=explain_list,

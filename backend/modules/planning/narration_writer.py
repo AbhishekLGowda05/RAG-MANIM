@@ -54,6 +54,8 @@ RULES:
 - The phrases must appear in the order listed.
 - Surround each required phrase with natural connective language.
 - For low-confidence learners, include one micro-analogy or relatable example inside the scene.
+- If the curriculum context lists Prerequisites for this topic, open with a one-sentence verbal
+  recap of the most relevant prerequisite before introducing the new concept (stay within word budget).
 
 Return ONLY the narration text:"""
 

@@ -62,15 +62,17 @@ from modules.planning.grounding_validator import validate_storyboard_grounding, 
 
 from modules.retrieval.pageindex_retriever import (
     clear_artifacts_cache,
+    indexed_folders,
     list_documents,
-    retrieve_curriculum_context,
-    retrieve_curriculum_sections,
+    resolve_document,
+    retrieve_curriculum,
+    validate_document_request,
 )
 
 from modules.tts.piper_tts import synthesize
 from modules.sync.sync_engine import synchronize_all
 from modules.manim.semantic_compiler import semantic_compile_all
-from modules.manim.renderer import render
+from modules.manim.renderer import render, reset_llm_repair_state
 from modules.video.ffmpeg_merge import merge
 
 app = FastAPI(title="LearnOS Python API Backend")
@@ -342,6 +344,7 @@ async def run_pipeline_task(
     learner_profile: Optional[Dict[str, Any]] = None,
     subject: str = "Physics",
     document_id: str | None = None,
+    resolution=None,
 ):
     job = ACTIVE_JOBS.get(session_id)
     if not job:
@@ -367,7 +370,8 @@ async def run_pipeline_task(
             learner_profile.get("pace_preference", "?"),
             learner_profile.get("subject_confidence", "?"),
         )
-    
+
+    reset_llm_repair_state()
     # 1. Update API Keys based on request payload parameters
     g_key = gemini_api_key or api_key
     n_key = nvidia_api_key or api_key
@@ -384,9 +388,41 @@ async def run_pipeline_task(
     try:
         # --- Stage 0: Retrieve curriculum context ---
         await queue.put({"stage": "retrieving", "progress": 5, "message": "Searching curriculum structure and textbook evidence..."})
-        logger.info("Curriculum retrieval topic=%r document_id=%r subject=%r", topic, document_id, subject)
-        curriculum_sections = retrieve_curriculum_sections(topic, document_id=document_id, subject=subject)
-        curriculum_context = retrieve_curriculum_context(topic, document_id=document_id, subject=subject)
+        if resolution is None:
+            resolution = resolve_document(document_id, subject)
+        logger.info(
+            "[RESOLUTION] pipeline topic=%r requested_document_id=%r subject=%r "
+            "resolved_folder=%r source=%s llm_only=%s indexed=%s",
+            topic,
+            document_id,
+            subject,
+            resolution.folder,
+            resolution.source,
+            resolution.llm_only,
+            resolution.indexed,
+        )
+
+        if resolution.llm_only:
+            logger.warning(
+                "[RESOLUTION][DEGRADED] -> LLM-only mode for topic=%r reason=%s",
+                topic,
+                resolution.reason,
+            )
+            await queue.put({
+                "stage": "retrieving",
+                "progress": 8,
+                "message": (
+                    "No indexed textbook for this subject; continuing with "
+                    "LLM-only lesson generation..."
+                ),
+            })
+
+        curriculum_result = retrieve_curriculum(topic, resolution=resolution)
+
+        curriculum_sections = curriculum_result.get("sections", [])
+        curriculum_context = curriculum_result.get("context_text", "")
+        _resolution_source = curriculum_result.get("resolution_source", "unknown")
+        _resolved_document_id = curriculum_result.get("document_id") or resolution.folder or "llm_only"
         logger.info(
             "Retrieved %d curriculum sections",
             len(curriculum_sections)
@@ -422,14 +458,13 @@ async def run_pipeline_task(
 
         # Write retrieval audit log for observability / debugging
         try:
-            _doc_folder = curriculum_sections[0].get("document_id", document_id or "unknown") if curriculum_sections else (document_id or "unknown")
-            _resolution_source = curriculum_sections[0].get("artifacts_dir", "") if curriculum_sections else ""
             retrieval_audit = {
                 "session_id": session_id,
                 "topic": topic,
                 "subject": subject,
-                "document_id": _doc_folder,
+                "document_id": _resolved_document_id,
                 "resolution_source": _resolution_source,
+                "requested_document_id": document_id,
                 "sections": [
                     {
                         "title": s.get("title"),
@@ -710,6 +745,30 @@ async def run_pipeline_task(
 async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTasks):
     session_id = f"session_{int(time.time() * 1000)}"
 
+    resolution_preview = resolve_document(req.documentId, req.subject)
+    if resolution_preview.llm_only:
+        logger.warning(
+            "Pipeline %s will run LLM-only: %s",
+            session_id,
+            resolution_preview.reason,
+        )
+    elif resolution_preview.source == "newest":
+        logger.warning(
+            "Pipeline %s document warning: no document_id or subject; using %r",
+            session_id,
+            resolution_preview.folder,
+        )
+    logger.info(
+        "Pipeline %s queued topic=%r subject=%r documentId=%r will_resolve=%r via=%s llm_only=%s",
+        session_id,
+        req.topic,
+        req.subject,
+        req.documentId,
+        resolution_preview.folder,
+        resolution_preview.source,
+        resolution_preview.llm_only,
+    )
+
     learner_profile_dict = req.learnerProfile.model_dump() if req.learnerProfile else None
 
     ACTIVE_JOBS[session_id] = {
@@ -720,6 +779,7 @@ async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTa
         "gemini_api_key": req.geminiApiKey,
         "nvidia_api_key": req.nvidiaApiKey,
         "learner_profile": learner_profile_dict,
+        "resolution": resolution_preview,
         "queue": asyncio.Queue(),
         "status": "queued"
     }
@@ -734,6 +794,7 @@ async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTa
         learner_profile_dict,
         req.subject,
         req.documentId,
+        resolution_preview,
     )
 
     return {"sessionId": session_id, "resolvedTopic": req.topic}
@@ -760,7 +821,16 @@ async def get_pipeline_status(session_id: str):
 
 @app.get("/api/curriculum/documents")
 async def curriculum_documents():
-    return {"documents": list_documents()}
+    return {
+        "documents": list_documents(),
+        "indexed_folders": indexed_folders(),
+    }
+
+
+@app.get("/api/curriculum/validate")
+async def curriculum_validate(documentId: Optional[str] = None, subject: Optional[str] = None):
+    """Debug endpoint: preview how document_id/subject will resolve before pipeline run."""
+    return validate_document_request(documentId, subject)
 
 
 @app.post("/api/curriculum/index")

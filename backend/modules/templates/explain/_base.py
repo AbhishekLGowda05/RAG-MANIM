@@ -92,7 +92,7 @@ def wrap_explain_scene(
 ) -> str:
     header = _EXPLAIN_HEADER.format(scene_module=scene_module, scene_class=scene_class)
     indented = "\n".join(
-        ("        " + line if line.strip() else "") for line in body.splitlines()
+        ("        " + line.strip() if line.strip() else "") for line in body.splitlines()
     )
     return header + indented + "\n" + _EXPLAIN_FOOTER
 

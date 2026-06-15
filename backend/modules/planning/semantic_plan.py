@@ -59,7 +59,9 @@ RULES:
 2. "assets" must be an empty array [].
 3. Provide 2-4 "events" using only ALLOWED EVENTS; each needs an anchor_phrase (3-7 words)
    that will appear VERBATIM in the narration later.
-4. "phase" is "before", "on", or "after"; "importance" is 1-5.
+4. If Prerequisites are listed in the curriculum context, include a brief recap phrase in one
+   event's anchor_phrase when the scene builds on a prior concept.
+5. "phase" is "before", "on", or "after"; "importance" is 1-5.
 
 Return ONLY this JSON shape:
 {{
@@ -107,6 +109,8 @@ CRITICAL RULES:
 4. For atomic_structure: shells must be a list of integers (e.g. [2, 8, 1] for sodium).
 5. "phase" is "before", "on", or "after"; "importance" is 1-5 (5 = most critical visual beat).
 6. Do NOT use physics assets like block, hockey_puck, or car — these are chemistry scenes.
+7. If Prerequisites are listed in the curriculum context, weave a brief recap into one event's
+   anchor_phrase when the scene depends on prior knowledge (e.g. "recall Rutherford's nucleus").
 
 Return ONLY this JSON shape:
 {{
