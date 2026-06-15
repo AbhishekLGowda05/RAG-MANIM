@@ -29,12 +29,16 @@ export const ProfileProvider = ({ children }) => {
   useEffect(() => {
     async function loadProfile() {
       try {
-        const response = await fetch('/api/load/profile.json');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const response = await fetch('/api/load/profile.json', {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
         if (response.ok) {
           const data = await response.json();
           if (data && data.learner_id) {
             setProfile(data);
-            setLoading(false);
             return;
           }
         }
@@ -59,9 +63,8 @@ export const ProfileProvider = ({ children }) => {
         setProfile(newProfile);
         localStorage.setItem('learnos_profile', JSON.stringify(newProfile));
       }
-      setLoading(false);
     }
-    loadProfile();
+    loadProfile().finally(() => setLoading(false));
   }, []);
 
   // Save profile to API and local storage

@@ -2,9 +2,15 @@
 
 This is the production compiler. It:
   1. Looks up the correct concept template from TEMPLATES registry
-  2. Passes the semantic plan and timed event timeline to template.compile()
-  3. Validates the generated code has no raw geometry primitives
-  4. Writes the final scene_N.py file
+  2. Proactively overrides generic/freeform templates with chemistry templates
+     when the topic, semantic_tags, or visualizable_elements indicate a
+     chemistry domain.
+  3. Passes the semantic plan and timed event timeline to template.compile()
+  4. Validates the generated code has no raw geometry primitives
+  5. Writes the final scene_N.py file
+
+Fallback hierarchy (per scene):
+  chemistry template → explain template → intro → stub (on exception)
 """
 from __future__ import annotations
 
@@ -28,6 +34,67 @@ _GEOMETRY_PRIMITIVES = (
     'Rectangle(width=',
 )
 
+# Templates the LLM planner may assign that are considered "generic" —
+# the chemistry router is consulted to upgrade these when the topic is
+# a chemistry domain. "freeform" is always last-resort.
+_GENERIC_TEMPLATE_IDS = frozenset({
+    "freeform", "intro", "concept_card", "diagram",
+    "comparison", "equation", "timeline",
+})
+
+
+def _resolve_template(plan: dict[str, Any]) -> type:
+    """Determine the best template class for this plan.
+
+    Resolution order:
+      1. If the LLM assigned a specific chemistry template → use it directly.
+      2. If the LLM assigned a generic template (freeform / intro / diagram …)
+         → try the chemistry router first; only keep the generic choice if the
+         router returns nothing (topic is not a chemistry domain).
+      3. If the template ID is unknown → try chemistry router, then 'intro'.
+    """
+    template_id = plan.get("concept_template", "intro")
+    template_cls = TEMPLATES.get(template_id)
+
+    # Step 1: named template is already a chemistry template — trust it.
+    from modules.templates.chemistry import CHEMISTRY_TEMPLATE_IDS
+    if template_id in CHEMISTRY_TEMPLATE_IDS and template_cls is not None:
+        return template_cls
+
+    # Step 2 & 3: generic or unknown template → consult chemistry router.
+    if template_id in _GENERIC_TEMPLATE_IDS or template_cls is None:
+        try:
+            from modules.planning.chemistry_router import route_chemistry_template
+            chem_id = route_chemistry_template(
+                topic=plan.get("title", ""),
+                scene_role=plan.get("scene_role", ""),
+                semantic_tags=plan.get("semantic_tags", []),
+                visualizable_elements=plan.get("visualizable_elements", []),
+            )
+            if chem_id:
+                chem_cls = TEMPLATES.get(chem_id)
+                if chem_cls:
+                    logger.info(
+                        "Chemistry router upgraded '%s' → '%s' for scene %d "
+                        "(topic=%r tags=%r)",
+                        template_id, chem_id,
+                        plan.get("scene_id", "?"),
+                        plan.get("title", ""),
+                        plan.get("semantic_tags", []),
+                    )
+                    return chem_cls
+        except Exception as exc:
+            logger.debug("Chemistry router error for scene %s: %s", plan.get("scene_id"), exc)
+
+    if template_cls is not None:
+        return template_cls
+
+    logger.warning(
+        "Template '%s' not found for scene %d; falling back to 'intro'",
+        template_id, plan.get("scene_id", "?"),
+    )
+    return TEMPLATES["intro"]
+
 
 def semantic_compile(
     plan: dict[str, Any],
@@ -41,30 +108,7 @@ def semantic_compile(
     template_id = plan.get("concept_template", "intro")
     logger.info("Compiling scene %d with template '%s'", scene_id, template_id)
 
-    template_cls = TEMPLATES.get(template_id)
-    if template_cls is None:
-        # Attempt chemistry routing before generic fallback.
-        try:
-            from modules.planning.chemistry_router import route_chemistry_template
-            fallback_chem_id = route_chemistry_template(
-                topic=plan.get("title", ""),
-                scene_role=plan.get("scene_role", ""),
-                semantic_tags=plan.get("semantic_tags", []),
-                visualizable_elements=plan.get("visualizable_elements", []),
-            )
-            if fallback_chem_id:
-                template_cls = TEMPLATES.get(fallback_chem_id)
-                if template_cls:
-                    logger.info(
-                        "Template '%s' not found; chemistry router fallback to '%s'",
-                        template_id, fallback_chem_id,
-                    )
-        except Exception as _e:
-            logger.debug("Chemistry router fallback error: %s", _e)
-
-        if template_cls is None:
-            logger.warning("Template '%s' not found; falling back to 'intro'", template_id)
-            template_cls = TEMPLATES["intro"]
+    template_cls = _resolve_template(plan)
 
     timeline = sync_result.get("timeline", {
         "audio_duration": sync_result.get("audio_duration", 8.0),
@@ -87,14 +131,72 @@ def semantic_compile_all(
     plans: list[dict[str, Any]],
     timelines: list[dict[str, Any]],
 ) -> list[tuple[Path, str]]:
-    """Compile all scenes."""
+    """Compile all scenes, isolating failures so one bad scene can't kill the video.
+
+    If a scene raises during compilation, a safe stub scene is written in its
+    place and the pipeline continues with the remaining scenes.
+    """
     timeline_map = {t["scene_id"]: t for t in timelines}
-    results = []
+    results: list[tuple[Path, str]] = []
+    failed_scenes: list[int] = []
+
     for plan in plans:
         sid = plan["scene_id"]
         sync = timeline_map.get(sid, {"scene_id": sid, "audio_duration": 8.0, "timeline": {}})
-        results.append(semantic_compile(plan, sync))
+        try:
+            results.append(semantic_compile(plan, sync))
+        except Exception as exc:
+            logger.error(
+                "Scene %d compile FAILED (%s: %s) — writing stub fallback",
+                sid, type(exc).__name__, exc, exc_info=True,
+            )
+            failed_scenes.append(sid)
+            stub_code = _compile_stub_fallback(plan, sync)
+            stub_path = PATHS["manim"] / f"scene_{sid}.py"
+            try:
+                stub_path.write_text(stub_code, encoding="utf-8")
+            except Exception as write_exc:
+                logger.error("Could not write stub for scene %d: %s", sid, write_exc)
+            results.append((stub_path, stub_code))
+
+    if failed_scenes:
+        logger.warning(
+            "semantic_compile_all: %d/%d scenes failed and used stubs: %s",
+            len(failed_scenes), len(plans), failed_scenes,
+        )
+
     return results
+
+
+def _compile_stub_fallback(plan: dict[str, Any], sync_result: dict[str, Any]) -> str:
+    """Minimal valid Manim scene used when a template raises during compile."""
+    title = plan.get("title", f"Scene {plan.get('scene_id', '?')}")
+    goal = plan.get("learning_goal", "")
+    audio_dur = float(
+        sync_result.get("audio_duration")
+        or sync_result.get("timeline", {}).get("audio_duration")
+        or 8.0
+    )
+    pad = max(0.5, audio_dur - 2.5)
+    # Truncate long strings to prevent Text width overflow
+    title_safe = title[:60]
+    goal_safe = goal[:80] if goal else ""
+    return f'''from manim import *
+import numpy as np
+
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.camera.background_color = "#0f1117"
+        title = Text({title_safe!r}, font_size=40, weight=BOLD, color="#e0e6f0")
+        title.to_edge(UP, buff=0.5)
+        self.play(Write(title), run_time=0.9)
+        {"goal = Text(" + repr(goal_safe) + ", font_size=24, color='#c8d3e6')" if goal_safe else ""}
+        {"goal.next_to(title, DOWN, buff=0.6)" if goal_safe else ""}
+        {"self.play(FadeIn(goal, shift=UP*0.2), run_time=0.7)" if goal_safe else ""}
+        self.wait({pad:.2f})
+        self.play(FadeOut(*self.mobjects), run_time=0.40)
+'''
 
 
 # ---------------------------------------------------------------------------

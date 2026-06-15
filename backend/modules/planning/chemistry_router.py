@@ -80,13 +80,15 @@ _GEOMETRY_KEYWORDS = frozenset({
 # ---------------------------------------------------------------------------
 
 _TAG_TO_TEMPLATE: dict[str, str] = {
+    # Atomic structure tags — mapped to the most specific available template
     "atomic-structure":       "atomic_structure",
-    "nuclear-model":          "atomic_structure",
-    "electron-configuration": "atomic_structure",
+    "nuclear-model":          "rutherford_gold_foil",   # Rutherford's nuclear model
+    "electron-configuration": "electron_configuration", # dedicated shell-filling template
+    # Periodic / bonding / reaction tags
     "periodic-table":         "periodic_trends",
-    "ionic-bonding":          "ionic_bonding",    # more specific than chemical-bonding
-    "covalent-bonding":       "covalent_bonding", # more specific than chemical-bonding
-    "chemical-bonding":       "covalent_bonding", # generic bonding defaults to covalent
+    "ionic-bonding":          "ionic_bonding",
+    "covalent-bonding":       "covalent_bonding",
+    "chemical-bonding":       "covalent_bonding",       # generic bonding defaults to covalent
     "redox":                  "redox_transfer",
     "acid-base":              "acid_base",
     "chemical-equilibrium":   "chemical_equilibrium",
@@ -96,25 +98,63 @@ _TAG_TO_TEMPLATE: dict[str, str] = {
 
 # Priority ordering for tag matching — more specific tags take precedence.
 _TAG_PRIORITY_ORDER = [
-    "ionic-bonding", "covalent-bonding", "atomic-structure", "nuclear-model",
-    "electron-configuration", "periodic-table", "redox", "acid-base",
+    "ionic-bonding", "covalent-bonding",
+    "nuclear-model",          # before atomic-structure so Rutherford gets dedicated template
+    "electron-configuration", # before atomic-structure so shell filling gets dedicated template
+    "atomic-structure",
+    "periodic-table", "redox", "acid-base",
     "chemical-equilibrium", "reaction-energy", "molecular-geometry",
-    "chemical-bonding",  # least specific bonding tag — checked last
+    "chemical-bonding",       # least specific bonding tag — checked last
 ]
+
+# ---------------------------------------------------------------------------
+# Bohr-specific keyword set (subset of _ATOMIC_KEYWORDS, for finer routing)
+# ---------------------------------------------------------------------------
+
+_BOHR_KEYWORDS = frozenset({
+    "bohr", "bohr model", "bohr's model", "energy level", "energy levels",
+    "quantised", "quantized", "orbit", "orbits", "shell transition",
+    "emission", "absorption", "spectral line", "hydrogen spectrum",
+})
+
+_RUTHERFORD_KEYWORDS = frozenset({
+    "rutherford", "gold foil", "alpha particle", "nuclear model",
+    "nucleus", "scattering", "deflection", "canal ray",
+    "discharge tube", "plum pudding",
+})
+
+_ELECTRON_CONFIG_KEYWORDS_FINE = frozenset({
+    "electron configuration", "electronic configuration", "aufbau",
+    "pauli exclusion", "hund", "subshell", "orbital filling",
+    "2n squared", "k shell", "l shell", "m shell", "valence electrons",
+})
 
 # ---------------------------------------------------------------------------
 # scene_role → template preference lists (used as tie-breakers)
 # ---------------------------------------------------------------------------
 
 _ROLE_PREFERENCE: dict[str, list[str]] = {
-    "hook":            ["atomic_structure", "rutherford_gold_foil", "periodic_trends"],
-    "visual_intuition":["atomic_structure", "ionic_bonding", "covalent_bonding", "periodic_trends"],
-    "formal_concept":  ["atomic_structure", "periodic_trends", "ionic_bonding", "covalent_bonding"],
-    "worked_example":  ["redox_transfer", "acid_base", "chemical_equilibrium", "reaction_energy"],
-    "summary":         ["atomic_structure"],
+    "hook": [
+        "rutherford_gold_foil", "bohr_orbit", "atomic_structure", "periodic_trends",
+    ],
+    "visual_intuition": [
+        "bohr_orbit", "atomic_structure", "rutherford_gold_foil",
+        "ionic_bonding", "covalent_bonding", "periodic_trends",
+    ],
+    "formal_concept": [
+        "bohr_orbit", "electron_configuration", "atomic_structure",
+        "periodic_trends", "ionic_bonding", "covalent_bonding",
+    ],
+    "worked_example": [
+        "redox_transfer", "acid_base", "chemical_equilibrium", "reaction_energy",
+        "electron_configuration",
+    ],
+    "summary": [
+        "atomic_structure", "bohr_orbit",
+    ],
 }
 
-# All valid chemistry template IDs (must match templates/__init__.py keys)
+# All valid chemistry template IDs — kept in sync with chemistry/__init__.py.
 CHEMISTRY_TEMPLATE_IDS = [
     "atomic_structure",
     "periodic_trends",
@@ -124,6 +164,11 @@ CHEMISTRY_TEMPLATE_IDS = [
     "chemical_equilibrium",
     "acid_base",
     "reaction_energy",
+    # Specific atomic-model templates
+    "rutherford_gold_foil",
+    "bohr_orbit",
+    "electron_configuration",
+    "redox_transfer",
 ]
 
 
@@ -146,16 +191,47 @@ def route_chemistry_template(
     vis_lower = [v.lower() for v in visualizable_elements]
     combined = topic_lower + " " + " ".join(tags_lower) + " " + " ".join(vis_lower)
 
-    # 1. Explicit tag override — use priority order (specific before generic)
+    def _kw_hit(keyword_set: frozenset, text: str) -> bool:
+        """Simple substring check (fast path used before full word-boundary match)."""
+        return any(kw in text for kw in keyword_set)
+
+    # 1. Explicit tag override — use priority order (specific before generic).
+    #    For the "atomic-structure" tag, refine further with Bohr/Rutherford keywords
+    #    so that topic-specific templates are preferred over the generic one.
     for priority_tag in _TAG_PRIORITY_ORDER:
         if priority_tag in tags_lower:
-            return _TAG_TO_TEMPLATE[priority_tag]
+            base = _TAG_TO_TEMPLATE[priority_tag]
+            if base == "atomic_structure":
+                # Refine: Bohr-specific topic → bohr_orbit
+                if _kw_hit(_BOHR_KEYWORDS, combined):
+                    return "bohr_orbit"
+                # Refine: Rutherford-specific topic → rutherford_gold_foil
+                if _kw_hit(_RUTHERFORD_KEYWORDS, combined):
+                    return "rutherford_gold_foil"
+                # Refine: electron config specifics → electron_configuration
+                if _kw_hit(_ELECTRON_CONFIG_KEYWORDS_FINE, combined):
+                    return "electron_configuration"
+            return base
 
-    # 2. Visualizable elements signal atomic structure
-    atomic_vis = {"discharge tube", "plum pudding model", "gold foil experiment",
-                  "bohr atom orbits", "bohr model", "rutherford"}
-    if any(any(av in ve for av in atomic_vis) for ve in vis_lower):
-        return "atomic_structure"
+    # 2. Visualizable elements — route to the most specific atomic template
+    _vis_to_template = {
+        "bohr atom orbits":       "bohr_orbit",
+        "bohr model":             "bohr_orbit",
+        "energy levels":          "bohr_orbit",
+        "shell transition":       "bohr_orbit",
+        "gold foil experiment":   "rutherford_gold_foil",
+        "rutherford":             "rutherford_gold_foil",
+        "alpha particle":         "rutherford_gold_foil",
+        "nuclear model":          "rutherford_gold_foil",
+        "discharge tube":         "atomic_structure",
+        "plum pudding model":     "atomic_structure",
+        "electron shell":         "electron_configuration",
+        "shell filling":          "electron_configuration",
+    }
+    for ve in vis_lower:
+        for vis_key, tmpl in _vis_to_template.items():
+            if vis_key in ve:
+                return tmpl
 
     def _kw_match(keyword_set: frozenset, text: str) -> bool:
         """Word-boundary match any keyword from a set against text."""
@@ -164,14 +240,27 @@ def route_chemistry_template(
                 return True
         return False
 
-    # 3. Keyword domain detection with scene_role preference
-    if _kw_match(_ELECTRON_CONFIG_KEYWORDS, combined):
-        return "atomic_structure"
+    # 3. Fine-grained atomic-model routing (before generic atomic keyword check)
+    #    Bohr-specific → bohr_orbit; Rutherford-specific → rutherford_gold_foil
+    if _kw_match(_BOHR_KEYWORDS, combined):
+        prefs = _ROLE_PREFERENCE.get(scene_role, [])
+        for p in prefs:
+            if p in ("bohr_orbit", "atomic_structure"):
+                return p
+        return "bohr_orbit"
 
+    if _kw_match(_RUTHERFORD_KEYWORDS, combined):
+        return "rutherford_gold_foil"
+
+    # 4. Electron configuration (dedicated shell-filling template)
+    if _kw_match(_ELECTRON_CONFIG_KEYWORDS_FINE, combined) or _kw_match(_ELECTRON_CONFIG_KEYWORDS, combined):
+        return "electron_configuration"
+
+    # 5. General atomic structure keyword match
     if _kw_match(_ATOMIC_KEYWORDS, combined):
         prefs = _ROLE_PREFERENCE.get(scene_role, [])
         for p in prefs:
-            if p == "atomic_structure":
+            if p in ("bohr_orbit", "atomic_structure", "rutherford_gold_foil"):
                 return p
         return "atomic_structure"
 

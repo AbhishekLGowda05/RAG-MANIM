@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from '../context/SessionContext';
+import VideoPlayer from '../components/VideoPlayer';
+import TranscriptPanel from '../components/TranscriptPanel';
+import ChatPanel from '../components/ChatPanel';
+import MarkdownEditor from '../components/MarkdownEditor';
+import PipelineStatus from '../components/PipelineStatus';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -9,11 +14,6 @@ const _STATIC_SUBJECT_DOC_MAP = {
   Chemistry: 'Chemistry.pdf',
   Physics: 'SCERT Kerala State Syllabus 10th Standard Physics Textbooks English Medium Part 1.pdf',
 };
-import VideoPlayer from '../components/VideoPlayer';
-import TranscriptPanel from '../components/TranscriptPanel';
-import ChatPanel from '../components/ChatPanel';
-import MarkdownEditor from '../components/MarkdownEditor';
-import PipelineStatus from '../components/PipelineStatus';
 
 export default function Workspace() {
   const {

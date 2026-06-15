@@ -90,7 +90,12 @@ def _align_whisperx(wav_path: Path, transcript: str) -> list[dict[str, Any]]:
 
 
 def _align_uniform(wav_path: Path, transcript: str) -> list[dict[str, Any]]:
-    """Uniform proportional timestamps when WhisperX is unavailable."""
+    """Uniform proportional timestamps when WhisperX is unavailable.
+
+    This is the expected code path when USE_WHISPERX=false (the default).
+    Timing sync will be approximate but the video will still render correctly.
+    Enable WhisperX for frame-accurate word-level alignment.
+    """
     from modules.tts.piper_tts import get_audio_duration
 
     duration = get_audio_duration(wav_path)
@@ -105,5 +110,9 @@ def _align_uniform(wav_path: Path, transcript: str) -> list[dict[str, Any]]:
             "start": round(i * slot, 3),
             "end": round((i + 1) * slot, 3),
         })
-    logger.warning("Using uniform alignment fallback (%d words, %.2fs)", len(words), duration)
+    logger.info(
+        "Uniform alignment: %d words over %.2fs "
+        "(set USE_WHISPERX=true for frame-accurate sync)",
+        len(words), duration,
+    )
     return words

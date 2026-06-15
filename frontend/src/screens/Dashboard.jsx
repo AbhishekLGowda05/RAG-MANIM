@@ -1,13 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useProfile } from '../context/ProfileContext';
 import { useSession } from '../context/SessionContext';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-
-const _STATIC_SUBJECT_DOC_MAP = {
-  Chemistry: 'Chemistry.pdf',
-  Physics: 'SCERT Kerala State Syllabus 10th Standard Physics Textbooks English Medium Part 1.pdf',
-};
 import MetricCard from '../components/MetricCard';
 import SubjectPill from '../components/SubjectPill';
 import topicCatalog from '../mock/topic_catalog.json';
@@ -16,6 +9,13 @@ import {
   getSessionsThisWeek,
   computeActiveStreak,
 } from '../utils/sessionHelpers';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
+const _STATIC_SUBJECT_DOC_MAP = {
+  Chemistry: 'Chemistry.pdf',
+  Physics: 'SCERT Kerala State Syllabus 10th Standard Physics Textbooks English Medium Part 1.pdf',
+};
 
 export default function Dashboard({ setActiveScreen }) {
   const { profile } = useProfile();

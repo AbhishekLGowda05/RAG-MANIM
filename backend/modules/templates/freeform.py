@@ -141,10 +141,18 @@ _BANNED_PATTERNS = (
     r"ImageMobject\s*\(",
 )
 
+# Static replacement string — never embed the raw regex pattern in the
+# replacement arg of re.sub(). In Python 3.12+ unrecognised backslash
+# sequences like \s and \( in the replacement string raise re.error.
+_SANITIZE_REPLACEMENT = "# [sanitized]"
+
 
 def _sanitize(code: str) -> str:
     for pat in _BANNED_PATTERNS:
-        code = re.sub(pat, "# blocked: " + pat, code)
+        try:
+            code = re.sub(pat, _SANITIZE_REPLACEMENT, code)
+        except re.error as exc:
+            logger.warning("Sanitize pattern %r failed: %s — skipping", pat, exc)
     if "from manim import" not in code:
         code = "from manim import *\nimport numpy as np\n\n" + code
     if "import numpy" not in code:
