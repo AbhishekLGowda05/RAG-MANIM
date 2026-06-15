@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from '../context/SessionContext';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
+// Maps subject names to indexed document IDs. Populated dynamically from the
+// /api/curriculum/documents endpoint; this object is the static fallback.
+const _STATIC_SUBJECT_DOC_MAP = {
+  Chemistry: 'Chemistry.pdf',
+  Physics: 'SCERT Kerala State Syllabus 10th Standard Physics Textbooks English Medium Part 1.pdf',
+};
 import VideoPlayer from '../components/VideoPlayer';
 import TranscriptPanel from '../components/TranscriptPanel';
 import ChatPanel from '../components/ChatPanel';
@@ -20,6 +29,28 @@ export default function Workspace() {
   const [inputTopic, setInputTopic] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('Physics');
   const [currentTime, setCurrentTime] = useState(0);
+  const [subjectDocMap, setSubjectDocMap] = useState(_STATIC_SUBJECT_DOC_MAP);
+
+  // Fetch indexed documents and build subject → docId map dynamically.
+  useEffect(() => {
+    async function fetchDocMap() {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/curriculum/documents`);
+        if (!res.ok) return;
+        const docs = await res.json();
+        const map = { ..._STATIC_SUBJECT_DOC_MAP };
+        for (const doc of docs) {
+          if (doc.subject && doc.id) {
+            map[doc.subject] = doc.id;
+          }
+        }
+        setSubjectDocMap(map);
+      } catch (_) {
+        // Fall back to static map silently.
+      }
+    }
+    fetchDocMap();
+  }, []);
 
   useEffect(() => {
     setCurrentTime(0);
@@ -34,7 +65,8 @@ export default function Workspace() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (!inputTopic.trim()) return;
-    startPipeline(inputTopic.trim(), selectedSubject);
+    const docId = subjectDocMap[selectedSubject] || null;
+    startPipeline(inputTopic.trim(), selectedSubject, docId);
   };
 
   const isPipelineRunning =

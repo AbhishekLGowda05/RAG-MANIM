@@ -108,8 +108,17 @@ def write_narration(
 
     client = NvidiaClient()
     phrases_display = "\n".join(f'  "{p}"' for p in unique_phrases)
+
+    # Enrich context with visual metadata from curriculum sections
+    enriched_context = curriculum_context
+    if curriculum_sections:
+        from modules.retrieval.pageindex_retriever import format_sections_for_prompt
+        vis_block = format_sections_for_prompt(curriculum_sections)
+        if vis_block:
+            enriched_context = f"{vis_block}\n\n{curriculum_context}"
+
     prompt = NARRATION_PROMPT.format(
-        curriculum_context=curriculum_context,
+        curriculum_context=enriched_context,
         learner_context=learner_context,
         title=title,
         anchor_example=anchor_example,

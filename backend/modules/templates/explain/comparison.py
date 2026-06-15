@@ -6,6 +6,7 @@ from typing import Any
 from modules.templates.explain._base import (
     EXPLAIN_ALLOWED_EVENTS,
     audio_duration,
+    build_timing_waits,
     esc,
     merge_content,
     wrap_explain_scene,
@@ -29,7 +30,10 @@ class ComparisonTemplate:
         content = merge_content(plan, "comparison")
         dur = audio_duration(timeline)
 
-        body = f"""self.build_scene(
+        waits = build_timing_waits(timeline, ["e0", "e1"], [0.3, 1.5])
+        pre_title_wait = f"{waits[0]}\n        " if waits[0] else ""
+
+        body = f"""{pre_title_wait}self.build_scene(
             left_title="{esc(str(content.get('left_title', 'A')))}",
             left_content="{esc(str(content.get('left_content', '')))}",
             right_title="{esc(str(content.get('right_title', 'B')))}",

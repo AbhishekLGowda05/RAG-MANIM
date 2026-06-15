@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useProfile } from '../context/ProfileContext';
 import { useSession } from '../context/SessionContext';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
+const _STATIC_SUBJECT_DOC_MAP = {
+  Chemistry: 'Chemistry.pdf',
+  Physics: 'SCERT Kerala State Syllabus 10th Standard Physics Textbooks English Medium Part 1.pdf',
+};
 import MetricCard from '../components/MetricCard';
 import SubjectPill from '../components/SubjectPill';
 import topicCatalog from '../mock/topic_catalog.json';
@@ -25,6 +32,28 @@ export default function Dashboard({ setActiveScreen }) {
 
   const [greeting, setGreeting] = useState('Welcome');
   const [sortedSuggestions, setSortedSuggestions] = useState([]);
+  const [subjectDocMap, setSubjectDocMap] = useState(_STATIC_SUBJECT_DOC_MAP);
+
+  // Fetch indexed documents and build subject → docId map dynamically.
+  useEffect(() => {
+    async function fetchDocMap() {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/curriculum/documents`);
+        if (!res.ok) return;
+        const docs = await res.json();
+        const map = { ..._STATIC_SUBJECT_DOC_MAP };
+        for (const doc of docs) {
+          if (doc.subject && doc.id) {
+            map[doc.subject] = doc.id;
+          }
+        }
+        setSubjectDocMap(map);
+      } catch (_) {
+        // Fall back to static map silently.
+      }
+    }
+    fetchDocMap();
+  }, []);
 
   // Time-aware greeting
   useEffect(() => {
@@ -88,7 +117,8 @@ export default function Dashboard({ setActiveScreen }) {
 
   const handleSuggestionClick = async (topicTitle, subject) => {
     setActiveScreen('workspace');
-    await startPipeline(topicTitle, subject);
+    const docId = subjectDocMap[subject] || null;
+    await startPipeline(topicTitle, subject, docId);
   };
 
   const handleContinueClick = async (sid) => {

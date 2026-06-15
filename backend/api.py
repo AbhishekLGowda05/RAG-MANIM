@@ -58,6 +58,7 @@ from modules.planning.semantic_plan import build_all_semantic_plans
 from modules.planning.narration_writer import write_all_narrations
 from modules.planning.asset_registry import reset_registry
 from modules.planning.profile_context import format_learner_context
+from modules.planning.grounding_validator import validate_storyboard_grounding, log_grounding_issues
 
 from modules.retrieval.pageindex_retriever import (
     clear_artifacts_cache,
@@ -383,9 +384,9 @@ async def run_pipeline_task(
     try:
         # --- Stage 0: Retrieve curriculum context ---
         await queue.put({"stage": "retrieving", "progress": 5, "message": "Searching curriculum structure and textbook evidence..."})
-        logger.info("Curriculum retrieval topic=%r document_id=%r", topic, document_id)
-        curriculum_sections = retrieve_curriculum_sections(topic, document_id=document_id)
-        curriculum_context = retrieve_curriculum_context(topic, document_id=document_id)
+        logger.info("Curriculum retrieval topic=%r document_id=%r subject=%r", topic, document_id, subject)
+        curriculum_sections = retrieve_curriculum_sections(topic, document_id=document_id, subject=subject)
+        curriculum_context = retrieve_curriculum_context(topic, document_id=document_id, subject=subject)
         logger.info(
             "Retrieved %d curriculum sections",
             len(curriculum_sections)
@@ -418,6 +419,35 @@ async def run_pipeline_task(
         else:
             logger.warning("curriculum_sections topic=%r matched=0 (no sections found)", topic)
         logger.info("curriculum_context topic=%r length=%s", topic, len(curriculum_context))
+
+        # Write retrieval audit log for observability / debugging
+        try:
+            _doc_folder = curriculum_sections[0].get("document_id", document_id or "unknown") if curriculum_sections else (document_id or "unknown")
+            _resolution_source = curriculum_sections[0].get("artifacts_dir", "") if curriculum_sections else ""
+            retrieval_audit = {
+                "session_id": session_id,
+                "topic": topic,
+                "subject": subject,
+                "document_id": _doc_folder,
+                "resolution_source": _resolution_source,
+                "sections": [
+                    {
+                        "title": s.get("title"),
+                        "node_id": s.get("node_id"),
+                        "score": round(s.get("score", 0), 3),
+                        "breadcrumb": s.get("breadcrumb"),
+                        "pages": f"{s.get('start_page')}-{s.get('end_page')}",
+                        "semantic_tags": s.get("semantic_tags", []),
+                        "visualizable_elements": s.get("visualizable_elements", []),
+                    }
+                    for s in curriculum_sections
+                ],
+            }
+            (PATHS["json"] / "retrieval_audit.json").write_text(
+                json.dumps(retrieval_audit, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception as _audit_err:
+            logger.warning("Failed to write retrieval_audit.json: %s", _audit_err)
 
         # --- Stage 1: Generate explanation package ---
         await queue.put({"stage": "explaining", "progress": 15, "message": "Formulating pedagogical syllabus objectives..."})
@@ -482,6 +512,21 @@ async def run_pipeline_task(
             subject=subject
         )
         
+        # Grounding validation — warns if storyboard scenes don't overlap with curriculum
+        try:
+            grounding_issues = validate_storyboard_grounding(
+                storyboard, curriculum_sections, strict=False
+            )
+            log_grounding_issues(grounding_issues, logger, topic=topic)
+            if grounding_issues:
+                # Save issues to data/json for debugging
+                (PATHS["json"] / "grounding_issues.json").write_text(
+                    json.dumps(grounding_issues, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+        except Exception as _gv_err:
+            logger.warning("Grounding validator error (non-fatal): %s", _gv_err)
+
         await queue.put({
             "stage": "planning",
             "progress": 45,

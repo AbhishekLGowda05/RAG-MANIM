@@ -45,6 +45,46 @@ def audio_duration(timeline: dict[str, Any]) -> float:
     return float(timeline.get("audio_duration", 8.0))
 
 
+def event_start(timeline: dict[str, Any], event_id: str, default: float = 0.0) -> float:
+    """Return the absolute start time (seconds) of a named event from the sync timeline."""
+    for ev in timeline.get("events", []):
+        if ev.get("id") == event_id:
+            t = float(ev.get("start", default))
+            # Cap to 90% of audio_duration to prevent waiting past end of audio.
+            return min(t, audio_duration(timeline) * 0.90)
+    return default
+
+
+def event_rt(timeline: dict[str, Any], event_id: str, default: float = 0.7) -> float:
+    """Return the run_time (seconds) of a named event."""
+    for ev in timeline.get("events", []):
+        if ev.get("id") == event_id:
+            rt = float(ev.get("run_time", default))
+            return rt if rt >= 0.1 else default
+    return default
+
+
+def build_timing_waits(
+    timeline: dict[str, Any],
+    event_ids: list[str],
+    default_starts: list[float],
+) -> list[str]:
+    """Return a list of 'self.wait(N)' source lines to insert before each animation.
+
+    Each string is either a 'self.wait(...)' call or an empty string if no gap
+    is needed. Advances a cursor to avoid negative waits.
+    """
+    waits: list[str] = []
+    cursor = 0.0
+    for eid, dflt in zip(event_ids, default_starts):
+        t = event_start(timeline, eid, dflt)
+        gap = max(0.0, t - cursor)
+        waits.append(f"self.wait({gap:.3f})" if gap > 0.005 else "")
+        # Advance cursor by gap (the following animation adds its own time)
+        cursor = t
+    return waits
+
+
 def wrap_explain_scene(
     scene_module: str,
     scene_class: str,

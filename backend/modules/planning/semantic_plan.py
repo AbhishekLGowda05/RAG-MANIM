@@ -23,6 +23,7 @@ from modules.planning.profile_context import format_learner_context
 from modules.templates import TEMPLATES
 from modules.templates.explain import EXPLAIN_TEMPLATE_IDS
 from modules.templates.explain._base import merge_content
+from modules.templates.chemistry import CHEMISTRY_TEMPLATE_IDS
 
 logger = get_logger(__name__)
 
@@ -76,6 +77,53 @@ Return ONLY this JSON shape:
       "anchor_phrase": "<3-7 verbatim words for narration>",
       "phase": "on",
       "importance": 3
+    }}
+  ]
+}}"""
+
+SEMANTIC_PLAN_CHEMISTRY_PROMPT = """Fill the semantic plan for this CHEMISTRY ANIMATION scene.
+
+CURRICULUM CONTEXT:
+{curriculum_context}
+Use the curriculum context as the PRIMARY source of truth.
+Use textbook terminology, element symbols, formulas, and model names from the curriculum context.
+Do not invent unsupported chemical facts.
+
+{learner_context}
+
+STORYBOARD ENTRY:
+{storyboard_entry}
+
+TEMPLATE: {template_id}
+TEMPLATE ALLOWED EVENTS: {allowed_events}
+
+CONTENT SCHEMA — fill the "content" object exactly in this shape:
+{content_schema}
+
+CRITICAL RULES:
+1. "content" must match the CONTENT SCHEMA exactly — use real element symbols, correct atomic numbers, and accurate electron shell counts from the curriculum context.
+2. "assets" must be an empty array [].
+3. Provide 3-5 "events" using only ALLOWED EVENTS; each event needs an anchor_phrase (3-7 words) that will appear VERBATIM in the narration.
+4. For atomic_structure: shells must be a list of integers (e.g. [2, 8, 1] for sodium).
+5. "phase" is "before", "on", or "after"; "importance" is 1-5 (5 = most critical visual beat).
+6. Do NOT use physics assets like block, hockey_puck, or car — these are chemistry scenes.
+
+Return ONLY this JSON shape:
+{{
+  "scene_id": {scene_id},
+  "concept_template": "{template_id}",
+  "title": "<specific scene title from curriculum>",
+  "anchor_example": "{anchor_example}",
+  "content": <object matching CONTENT SCHEMA>,
+  "assets": [],
+  "events": [
+    {{
+      "id": "e0",
+      "type": "<from ALLOWED EVENTS>",
+      "targets": [],
+      "anchor_phrase": "<3-7 verbatim words that will appear in narration>",
+      "phase": "on",
+      "importance": 4
     }}
   ]
 }}"""
@@ -159,11 +207,34 @@ def build_semantic_plan(
     )
     content_schema = getattr(template_cls, "CONTENT_SCHEMA", None)
     is_explain = template_id in EXPLAIN_TEMPLATE_IDS
+    is_chemistry = template_id in CHEMISTRY_TEMPLATE_IDS
+
+    # Build visual metadata block from curriculum sections
+    sections_visual_metadata = ""
+    if curriculum_sections:
+        from modules.retrieval.pageindex_retriever import format_sections_for_prompt
+        sections_visual_metadata = format_sections_for_prompt(curriculum_sections)
+
+    # Enrich curriculum context with visual metadata for planners
+    enriched_context = curriculum_context
+    if sections_visual_metadata:
+        enriched_context = f"{sections_visual_metadata}\n\n{curriculum_context}"
 
     client = NvidiaClient()
-    if is_explain and content_schema:
+    if is_chemistry and content_schema:
+        prompt = SEMANTIC_PLAN_CHEMISTRY_PROMPT.format(
+            curriculum_context=enriched_context,
+            storyboard_entry=json.dumps(storyboard_entry, indent=2),
+            template_id=template_id,
+            allowed_events=", ".join(allowed_events),
+            content_schema=content_schema,
+            scene_id=scene_id,
+            anchor_example=anchor_example,
+            learner_context=learner_context,
+        )
+    elif is_explain and content_schema:
         prompt = SEMANTIC_PLAN_EXPLAIN_PROMPT.format(
-            curriculum_context=curriculum_context,
+            curriculum_context=enriched_context,
             storyboard_entry=json.dumps(storyboard_entry, indent=2),
             template_id=template_id,
             allowed_events=", ".join(allowed_events),
@@ -174,7 +245,7 @@ def build_semantic_plan(
         )
     else:
         prompt = SEMANTIC_PLAN_PROMPT.format(
-            curriculum_context=curriculum_context,
+            curriculum_context=enriched_context,
             storyboard_entry=json.dumps(storyboard_entry, indent=2),
             template_id=template_id,
             allowed_events=", ".join(allowed_events),
@@ -382,5 +453,11 @@ def _validate_plan(
         if isinstance(plan.get("content"), dict):
             base_entry["content"] = plan["content"]
         plan["content"] = merge_content(base_entry, template_id)
+
+    elif template_id in CHEMISTRY_TEMPLATE_IDS:
+        # Chemistry templates never use physics assets; preserve LLM-filled content dict.
+        plan["assets"] = []
+        if not isinstance(plan.get("content"), dict):
+            plan["content"] = {}
 
     return plan

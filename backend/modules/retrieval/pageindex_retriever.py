@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,6 +28,35 @@ logger = logging.getLogger(__name__)
 
 _artifacts_cache: Dict[str, DocumentArtifacts] = {}
 _concept_graph_cache: Dict[str, dict] = {}
+
+# Folders excluded from automatic "newest" selection — too noisy for subject queries.
+_BLACKLISTED_AUTO_FOLDERS = frozenset({
+    "ilovepdf_merged.pdf",
+})
+
+# Maps subject names → folder-name substrings used for subject-aware routing.
+_SUBJECT_KEYWORDS: Dict[str, List[str]] = {
+    "Chemistry":    ["chemistry", "chem"],
+    "Physics":      ["physics", "phys"],
+    "Biology":      ["biology", "bio"],
+    "Mathematics":  ["mathematics", "maths", "math"],
+}
+
+# Chemistry-domain terms used to apply tag/vis_element scoring boosts.
+_CHEMISTRY_TOPIC_TERMS = frozenset({
+    "atom", "atomic", "bohr", "rutherford", "thomson", "electron",
+    "proton", "neutron", "nucleus", "orbital", "shell", "isotope",
+    "isobar", "periodic", "period", "group", "electronegativity",
+    "ionic", "covalent", "bond", "bonding", "redox", "oxidation",
+    "reduction", "oxidizing", "reducing", "discharge", "cathode",
+    "canal", "scattering", "valence", "configuration",
+})
+
+# Semantic tags that earn a strong boost when the query contains chemistry terms.
+_CHEMISTRY_BOOST_TAGS = frozenset({
+    "atomic-structure", "nuclear-model", "periodic-table",
+    "chemical-bonding", "redox", "electron-configuration",
+})
 
 
 def _guess_subject(name: str) -> str:
@@ -80,14 +110,27 @@ def _newest_folder() -> Optional[str]:
     return candidates[0].name if candidates else None
 
 
-def _resolve_doc_folder(document_id: Optional[str] = None) -> Tuple[str, str]:
-    """Return (folder_name, resolution_source)."""
+def _resolve_doc_folder(
+    document_id: Optional[str] = None,
+    subject: Optional[str] = None,
+) -> Tuple[str, str]:
+    """Return (folder_name, resolution_source).
+
+    Resolution priority:
+      1. Explicit document_id from request
+      2. PAGEINDEX_ACTIVE_DOC environment variable
+      3. Subject-aware folder lookup (subject keyword in folder name, not blacklisted)
+      4. Newest non-blacklisted folder
+      5. Hardcoded Physics PDF default
+    """
+    # 1. Explicit document_id
     if document_id:
         matched = _match_folder(document_id)
         if matched:
             return matched, "request"
         logger.warning("document_id=%r did not match any indexed folder; falling back", document_id)
 
+    # 2. PAGEINDEX_ACTIVE_DOC env var
     env_doc = os.environ.get("PAGEINDEX_ACTIVE_DOC", "").strip()
     if env_doc:
         matched = _match_folder(env_doc)
@@ -96,20 +139,48 @@ def _resolve_doc_folder(document_id: Optional[str] = None) -> Tuple[str, str]:
         if (_RESULTS_ROOT / env_doc).is_dir() and (_RESULTS_ROOT / env_doc / "structure.json").is_file():
             return env_doc, "env"
 
-    newest = _newest_folder()
-    if newest:
-        return newest, "newest"
+    # 3. Subject-aware folder selection
+    if subject:
+        keywords = _SUBJECT_KEYWORDS.get(subject, [subject.lower()])
+        candidates = [
+            p for p in _indexed_folders()
+            if p.name not in _BLACKLISTED_AUTO_FOLDERS
+            and any(kw in p.name.lower() for kw in keywords)
+        ]
+        if candidates:
+            best = max(candidates, key=lambda p: (p / "structure.json").stat().st_mtime)
+            logger.info("Subject-aware routing: subject=%r → folder=%r", subject, best.name)
+            return best.name, "subject_hint"
+
+    # 4. Newest non-blacklisted folder
+    non_blacklisted = [
+        p for p in _indexed_folders()
+        if p.name not in _BLACKLISTED_AUTO_FOLDERS
+    ]
+    if non_blacklisted:
+        newest = max(non_blacklisted, key=lambda p: (p / "structure.json").stat().st_mtime)
+        logger.info("Auto-selected newest non-blacklisted folder: %r", newest.name)
+        return newest.name, "newest"
+
+    # 5. Fall through to full list if everything is blacklisted (safety net)
+    newest_any = _newest_folder()
+    if newest_any:
+        logger.warning(
+            "All non-blacklisted folders exhausted; falling back to blacklisted folder %r",
+            newest_any,
+        )
+        return newest_any, "newest_fallback"
 
     return _DEFAULT_PDF.name, "default"
 
 
 def _resolve_active_doc() -> str:
-    folder, _ = _resolve_doc_folder(None)
+    folder, _ = _resolve_doc_folder(None, subject=None)
     return folder
 
 
 def _resolve_pdf_path(document_id: Optional[str] = None) -> Path:
-    folder, _ = _resolve_doc_folder(document_id)
+    folder, _ = _resolve_doc_folder(document_id, subject=None)
     if folder.endswith(".pdf"):
         candidate = _PAGEINDEX_ROOT / "examples" / "documents" / folder
         if candidate.is_file():
@@ -117,8 +188,8 @@ def _resolve_pdf_path(document_id: Optional[str] = None) -> Path:
     return _DEFAULT_PDF
 
 
-def _artifacts_for(document_id: Optional[str] = None) -> DocumentArtifacts:
-    folder, source = _resolve_doc_folder(document_id)
+def _artifacts_for(document_id: Optional[str] = None, subject: Optional[str] = None) -> DocumentArtifacts:
+    folder, source = _resolve_doc_folder(document_id, subject=subject)
     if folder not in _artifacts_cache:
         results_dir = _RESULTS_ROOT / folder
         if results_dir.is_dir() and (results_dir / "structure.json").is_file():
@@ -192,15 +263,44 @@ def _resolve_prerequisites(node_id: str, graph: dict, all_nodes: list) -> List[d
 
 
 def _score_node(node: dict, topic_words: set) -> float:
+    """Score a curriculum node against the query topic_words.
+
+    Improvements over the previous substring approach:
+    - Word-boundary regex prevents "atom" matching "atoms" in unrelated nodes.
+    - Strong +2.0 tag boost when chemistry semantic_tags match chemistry topic terms.
+    - Moderate +0.5 per visualizable_element that shares a word with the query.
+    """
     title = (node.get("title") or "").lower()
     summary = (node.get("summary") or "").lower()
     keywords = " ".join(node.get("keywords") or []).lower()
-    tags = " ".join(node.get("semantic_tags") or []).lower()
-    combined = f"{title} {summary} {keywords} {tags}"
-    hits = sum(1 for w in topic_words if w in combined)
+    tags_list = [t.lower() for t in (node.get("semantic_tags") or [])]
+    tags_str = " ".join(tags_list)
+    vis_elements = [v.lower() for v in (node.get("visualizable_elements") or [])]
+
+    combined = f"{title} {summary} {keywords} {tags_str}"
+
+    def _wb_hit(word: str, text: str) -> bool:
+        """Word-boundary match — prevents "atom" matching "atoms" in equations."""
+        return bool(re.search(r"\b" + re.escape(word) + r"\b", text))
+
+    hits = sum(1.0 for w in topic_words if _wb_hit(w, combined))
+
+    # Tag boost: chemistry domain tags earn +2.0 when query is chemistry-related.
+    tag_boost = 2.0 if (
+        any(t in _CHEMISTRY_BOOST_TAGS for t in tags_list)
+        and bool(topic_words & _CHEMISTRY_TOPIC_TERMS)
+    ) else 0.0
+
+    # Visualizable element boost: +0.5 per element that overlaps with query words.
+    vis_boost = sum(
+        0.5 for ve in vis_elements
+        if any(_wb_hit(w, ve) for w in topic_words)
+    )
+
     depth_bonus = 0.1 * (node.get("level", 1) - 1)
     summary_bonus = 0.2 if len((node.get("summary") or "")) > 30 else 0.0
-    return hits + depth_bonus + summary_bonus
+
+    return hits + tag_boost + vis_boost + depth_bonus + summary_bonus
 
 
 def _breadcrumb(node: dict, all_nodes: list) -> str:
@@ -217,13 +317,41 @@ def _breadcrumb(node: dict, all_nodes: list) -> str:
     return " > ".join(p for p in parts if p)
 
 
+def format_sections_for_prompt(sections: List[Dict[str, Any]]) -> str:
+    """Format matched curriculum sections into a rich prompt block.
+
+    Includes visualizable_elements and semantic_tags so LLM planners can
+    select the correct chemistry template and use accurate terminology.
+    """
+    if not sections:
+        return ""
+    lines = ["MATCHED CURRICULUM SECTIONS WITH VISUAL METADATA:"]
+    for sec in sections:
+        crumb = sec.get("breadcrumb") or sec.get("title", "")
+        start, end = sec.get("start_page"), sec.get("end_page")
+        pages = f"pp. {start}–{end}" if start and end else ""
+        kw = ", ".join((sec.get("keywords") or [])[:6])
+        tags = ", ".join(sec.get("semantic_tags") or [])
+        vis = "; ".join(sec.get("visualizable_elements") or [])
+
+        lines.append(f"  [{crumb}]{(' (' + pages + ')') if pages else ''}")
+        if kw:
+            lines.append(f"    Keywords: {kw}")
+        if tags:
+            lines.append(f"    Tags: {tags}")
+        if vis:
+            lines.append(f"    Visualizable elements: {vis}  ← use these for template selection")
+    return "\n".join(lines)
+
+
 def retrieve_curriculum_sections(
     topic: str,
     document_id: Optional[str] = None,
+    subject: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Return matched sections with page text pulled from extracted_pages.json."""
-    folder, source = _resolve_doc_folder(document_id)
-    artifacts = _artifacts_for(document_id)
+    folder, source = _resolve_doc_folder(document_id, subject=subject)
+    artifacts = _artifacts_for(document_id, subject=subject)
     all_nodes = artifacts.walk_nodes()
     graph = _load_concept_graph(artifacts)
     if not all_nodes:
@@ -297,19 +425,21 @@ def retrieve_curriculum_sections(
 def retrieve_curriculum_context(
     topic: str,
     document_id: Optional[str] = None,
+    subject: Optional[str] = None,
 ) -> str:
     """Return a prompt-ready context string built from on-disk pipeline artifacts."""
-    result = retrieve_curriculum(topic, document_id=document_id)
+    result = retrieve_curriculum(topic, document_id=document_id, subject=subject)
     return result.get("context_text", "")
 
 
 def retrieve_curriculum(
     topic: str,
     document_id: Optional[str] = None,
+    subject: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return structured curriculum object for downstream agents."""
-    folder, source = _resolve_doc_folder(document_id)
-    sections = retrieve_curriculum_sections(topic, document_id=document_id)
+    folder, source = _resolve_doc_folder(document_id, subject=subject)
+    sections = retrieve_curriculum_sections(topic, document_id=document_id, subject=subject)
     if not sections:
         return {
             "topic": topic,

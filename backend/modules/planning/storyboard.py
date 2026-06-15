@@ -22,6 +22,11 @@ from modules.templates import (
     MECHANICS_TEMPLATE_IDS,
     VALID_TEMPLATE_IDS,
 )
+from modules.planning.chemistry_router import (
+    CHEMISTRY_TEMPLATE_IDS,
+    route_chemistry_template,
+)
+from modules.retrieval.pageindex_retriever import format_sections_for_prompt
 
 logger = get_logger(__name__)
 
@@ -61,25 +66,41 @@ B) CHALKBOARD EXPLANATION (conceptual layouts, no physics assets) — use when t
    - timeline: ordered steps, history, or procedure (3-5 labels on a timeline)
    - diagram: relationships between parts (nodes in a flow or system)
 
-C) FALLBACK: freeform — only if neither family fits.
+C) CHEMISTRY (animated atomic / molecular / reaction visuals) — use ONLY when the topic is
+   chemistry. These templates render proper nucleus Dot clusters, concentric orbit Circles,
+   electron transfer animations, and periodic table grids — never cubes or generic rectangles
+   for subatomic particles:
+   - atomic_structure: Bohr / Rutherford / Thomson atomic models, electron shells, element badge
+   - periodic_trends: periodic table grid with trend arrows (atomic radius, electronegativity, etc.)
+   - ionic_bonding: electron dot transfer from donor to acceptor atom with charge labels
+   - covalent_bonding: shared electron pair between atoms with bond order labels
+   - molecular_geometry: VSEPR molecule shape with bond angles
+   - chemical_equilibrium: forward/reverse reaction arrows with Le Chatelier stress animation
+   - acid_base: proton transfer with pH scale and indicator color change
+   - reaction_energy: energy profile diagram (activation energy, exo/endo annotations)
+
+D) FALLBACK: freeform — only if no other family fits.
 
 Also available: intro (scene 1 only), summary (scene 5 only).
 
 SELECTION GUIDANCE:
-- Mix BOTH families across scenes 2-4 when the topic benefits (e.g. one simulation scene +
-  one equation or concept_card scene).
-- Prefer simulation templates when motion/forces are central; prefer explanation templates
-  for definitions, formulas, contrasts, and step-by-step reasoning.
-- If NO template fits a scene, use "freeform".
+- For chemistry topics, ALWAYS prefer family C templates over generic explanation (B) or freeform (D).
+- Mix families across scenes 2-4: e.g. for atomic structure → atomic_structure (visual) + equation (formal) + timeline (history).
+- Prefer simulation (A) when motion/forces are central; prefer explanation (B) for formulas and contrasts.
+- If NO template fits, use "freeform".
+
+PEDAGOGICAL SCENE ROLES — every scene must have a scene_role from this ordered arc:
+  Scene 1: "hook"           — introduce the topic with a surprising fact or relatable analogy
+  Scene 2: "visual_intuition" — show the key visual / phenomenon intuitively
+  Scene 3: "formal_concept"  — present the formal definition, equation, or model
+  Scene 4: "worked_example"  — apply the concept to a concrete example or calculation
+  Scene 5: "summary"         — consolidate learning with 3 key takeaways
 
 REQUIREMENTS:
-- Scene 1: always use "intro" template
-- Scene 5: always use "summary" template
-- Scenes 2-4: choose the template that best matches each scene's idea from families A or B,
-  or freeform as last resort.
-- Scenes 2, 3, and 4 MUST have THREE DIFFERENT concept_templates AND THREE DIFFERENT
-  anchor_examples. Do NOT reuse the same anchor across scenes. Each scene teaches a
-  DIFFERENT facet (definition, mechanism, edge case, real-world application, etc.).
+- Scene 1: always use "intro" template, scene_role "hook"
+- Scene 5: always use "summary" template, scene_role "summary"
+- Scenes 2-4: choose from families A/B/C/D; use scene_roles visual_intuition/formal_concept/worked_example in that order.
+- Scenes 2, 3, and 4 MUST have THREE DIFFERENT concept_templates AND THREE DIFFERENT anchor_examples.
 - Each scene's learning_goal must be a unique sentence.
 - anchor_example: a concrete real-world object, scenario, or numerical setup, different per scene.
 - subtitle (scene 1 only): short tagline for the intro
@@ -91,6 +112,7 @@ Return a JSON array of exactly 5 objects:
   {{
     "scene_id": 1,
     "concept_template": "intro",
+    "scene_role": "hook",
     "title": "<topic> — Overview",
     "anchor_example": "<short hook>",
     "learning_goal": "introduce the concept",
@@ -100,6 +122,7 @@ Return a JSON array of exactly 5 objects:
   {{
     "scene_id": 2,
     "concept_template": "<one of: {template_ids}>",
+    "scene_role": "visual_intuition",
     "title": "...",
     "anchor_example": "<DISTINCT scenario A>",
     "learning_goal": "<unique goal A>"
@@ -107,6 +130,7 @@ Return a JSON array of exactly 5 objects:
   {{
     "scene_id": 3,
     "concept_template": "<DIFFERENT template>",
+    "scene_role": "formal_concept",
     "title": "...",
     "anchor_example": "<DISTINCT scenario B>",
     "learning_goal": "<unique goal B>"
@@ -114,6 +138,7 @@ Return a JSON array of exactly 5 objects:
   {{
     "scene_id": 4,
     "concept_template": "<DIFFERENT template>",
+    "scene_role": "worked_example",
     "title": "...",
     "anchor_example": "<DISTINCT scenario C>",
     "learning_goal": "<unique goal C>"
@@ -121,6 +146,7 @@ Return a JSON array of exactly 5 objects:
   {{
     "scene_id": 5,
     "concept_template": "summary",
+    "scene_role": "summary",
     "title": "Key Takeaways",
     "anchor_example": "all scenarios",
     "learning_goal": "consolidate learning",
@@ -132,27 +158,18 @@ Return ONLY the JSON array."""
 
 
 def _build_curriculum_anchor(curriculum_context: str, curriculum_sections: list | None) -> str:
-    """Prepend a keyword anchor block if sections are available, for tighter LLM alignment."""
+    """Prepend a rich visual metadata block for tighter LLM alignment.
+
+    Uses format_sections_for_prompt to include semantic_tags and
+    visualizable_elements so the LLM can select chemistry-appropriate templates
+    and ground narration in correct textbook terminology.
+    """
     if not curriculum_sections:
         return curriculum_context
-    anchor_lines = []
-    for sec in curriculum_sections[:3]:
-        kws = sec.get("keywords") or []
-        pages = f"pp. {sec.get('start_page')}-{sec.get('end_page')}" if sec.get("start_page") else ""
-        title = sec.get("title", "")
-        breadcrumb = sec.get("breadcrumb", "") or title
-        line = f"  • {breadcrumb}"
-        if pages:
-            line += f" [{pages}]"
-        if kws:
-            line += f" — key terms: {', '.join(kws[:8])}"
-        anchor_lines.append(line)
-    if not anchor_lines:
-        return curriculum_context
-    anchor_block = "MATCHED CURRICULUM SECTIONS:\n" + "\n".join(anchor_lines)
+    visual_block = format_sections_for_prompt(curriculum_sections)
     if curriculum_context:
-        return f"{anchor_block}\n\nDETAILED CONTEXT:\n{curriculum_context}"
-    return anchor_block
+        return f"{visual_block}\n\nDETAILED CONTEXT:\n{curriculum_context}"
+    return visual_block
 
 
 def build_storyboard(
@@ -174,7 +191,7 @@ def build_storyboard(
     mechanics_list = "\n".join(f"   - {t}" for t in mechanics_middle)
     explain_list = "\n".join(f"   - {t}" for t in EXPLAIN_TEMPLATE_IDS)
     template_ids = ", ".join(
-        mechanics_middle + EXPLAIN_TEMPLATE_IDS + ["freeform"]
+        mechanics_middle + EXPLAIN_TEMPLATE_IDS + CHEMISTRY_TEMPLATE_IDS + ["freeform"]
     )
     learner_context = format_learner_context(learner_profile, topic, subject)
     prompt = STORYBOARD_PROMPT.format(
@@ -196,9 +213,15 @@ def build_storyboard(
     if not isinstance(raw, list):
         raise ValueError(f"Storyboard LLM returned {type(raw)}, expected list")
 
-    validated = [_validate_entry(entry, idx) for idx, entry in enumerate(raw, start=1)]
+    validated = [
+        _validate_entry(entry, idx, topic=topic, curriculum_sections=curriculum_sections)
+        for idx, entry in enumerate(raw, start=1)
+    ]
     validated[0]["concept_template"] = "intro"
+    validated[0]["scene_role"] = "hook"
     validated[-1]["concept_template"] = "summary"
+    validated[-1]["scene_role"] = "summary"
+    validated = _enforce_scene_roles(validated)
     validated = _enforce_distinct_middle(validated)
 
     out = PATHS["json"] / "storyboard.json"
@@ -207,15 +230,48 @@ def build_storyboard(
     return validated
 
 
-def _validate_entry(entry: dict[str, Any], default_id: int) -> dict[str, Any]:
+_VALID_SCENE_ROLES = frozenset({
+    "hook", "visual_intuition", "formal_concept", "worked_example", "summary",
+})
+
+_MIDDLE_ROLE_ORDER = ["visual_intuition", "formal_concept", "worked_example"]
+
+
+def _validate_entry(
+    entry: dict[str, Any],
+    default_id: int,
+    topic: str = "",
+    curriculum_sections: list | None = None,
+) -> dict[str, Any]:
     scene_id = int(entry.get("scene_id", default_id))
     template = str(entry.get("concept_template", "intro"))
-    if template not in VALID_TEMPLATE_IDS:
+
+    # Accept chemistry templates even if not in VALID_TEMPLATE_IDS yet (registered later)
+    all_known = set(VALID_TEMPLATE_IDS) | set(CHEMISTRY_TEMPLATE_IDS)
+    if template not in all_known:
         logger.warning(
             "Scene %d has unknown template '%s'; falling back to 'freeform'",
             scene_id, template,
         )
         template = "freeform"
+
+    # Chemistry router override: if topic/tags suggest chemistry and template is generic,
+    # replace with the most appropriate chemistry template.
+    scene_role = str(entry.get("scene_role", ""))
+    if template not in ("intro", "summary") and template not in CHEMISTRY_TEMPLATE_IDS:
+        top_section = (curriculum_sections or [{}])[0] if curriculum_sections else {}
+        chem_override = route_chemistry_template(
+            topic=topic,
+            scene_role=scene_role,
+            semantic_tags=top_section.get("semantic_tags", []),
+            visualizable_elements=top_section.get("visualizable_elements", []),
+        )
+        if chem_override:
+            logger.info(
+                "Scene %d: chemistry router overrides template '%s' → '%s'",
+                scene_id, template, chem_override,
+            )
+            template = chem_override
 
     result: dict[str, Any] = {
         "scene_id": scene_id,
@@ -224,6 +280,11 @@ def _validate_entry(entry: dict[str, Any], default_id: int) -> dict[str, Any]:
         "anchor_example": str(entry.get("anchor_example", "")),
         "learning_goal": str(entry.get("learning_goal", "")),
     }
+
+    # Preserve scene_role if LLM provided a valid one
+    if scene_role in _VALID_SCENE_ROLES:
+        result["scene_role"] = scene_role
+
     if "subtitle" in entry:
         result["subtitle"] = str(entry["subtitle"])
     if "key_term" in entry:
@@ -231,6 +292,24 @@ def _validate_entry(entry: dict[str, Any], default_id: int) -> dict[str, Any]:
     if "summary_points" in entry and isinstance(entry["summary_points"], list):
         result["summary_points"] = [str(p) for p in entry["summary_points"][:4]]
     return result
+
+
+def _enforce_scene_roles(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Enforce pedagogical role ordering.
+
+    Scene 1 → hook, scene 5 → summary.
+    Scenes 2–4 must be visual_intuition, formal_concept, worked_example in that order.
+    """
+    if not scenes:
+        return scenes
+    scenes[0]["scene_role"] = "hook"
+    if len(scenes) >= 5:
+        scenes[-1]["scene_role"] = "summary"
+    for i, scene in enumerate(scenes[1:-1], start=0):
+        assigned = scene.get("scene_role", "")
+        if assigned not in _VALID_SCENE_ROLES or assigned in ("hook", "summary"):
+            scene["scene_role"] = _MIDDLE_ROLE_ORDER[i] if i < len(_MIDDLE_ROLE_ORDER) else "formal_concept"
+    return scenes
 
 
 def _enforce_distinct_middle(scenes: list[dict[str, Any]]) -> list[dict[str, Any]]:

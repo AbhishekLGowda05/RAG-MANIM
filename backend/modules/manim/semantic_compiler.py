@@ -43,8 +43,28 @@ def semantic_compile(
 
     template_cls = TEMPLATES.get(template_id)
     if template_cls is None:
-        logger.warning("Template '%s' not found; falling back to 'intro'", template_id)
-        template_cls = TEMPLATES["intro"]
+        # Attempt chemistry routing before generic fallback.
+        try:
+            from modules.planning.chemistry_router import route_chemistry_template
+            fallback_chem_id = route_chemistry_template(
+                topic=plan.get("title", ""),
+                scene_role=plan.get("scene_role", ""),
+                semantic_tags=plan.get("semantic_tags", []),
+                visualizable_elements=plan.get("visualizable_elements", []),
+            )
+            if fallback_chem_id:
+                template_cls = TEMPLATES.get(fallback_chem_id)
+                if template_cls:
+                    logger.info(
+                        "Template '%s' not found; chemistry router fallback to '%s'",
+                        template_id, fallback_chem_id,
+                    )
+        except Exception as _e:
+            logger.debug("Chemistry router fallback error: %s", _e)
+
+        if template_cls is None:
+            logger.warning("Template '%s' not found; falling back to 'intro'", template_id)
+            template_cls = TEMPLATES["intro"]
 
     timeline = sync_result.get("timeline", {
         "audio_duration": sync_result.get("audio_duration", 8.0),
