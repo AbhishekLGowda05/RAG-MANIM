@@ -6,9 +6,16 @@ import json
 import subprocess
 from pathlib import Path
 
-from modules.config import FINAL_VIDEO, PATHS, get_logger
+from modules.config import FINAL_VIDEO, PATHS, RenderWorkspace, get_logger
 
 logger = get_logger(__name__)
+
+
+def _workdir(workspace: RenderWorkspace | None) -> Path:
+    if workspace is not None:
+        workspace.tmp_dir.mkdir(parents=True, exist_ok=True)
+        return workspace.tmp_dir
+    return PATHS["renders"]
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +42,6 @@ def _pad_video_to_duration(video: Path, target_seconds: float, out: Path) -> Pat
     """Pad video to target duration by freezing the last frame (no audio touched)."""
     cur = _probe_duration(video)
     if abs(cur - target_seconds) < 0.05:
-        # close enough - just normalize encoding
         cmd = [
             "ffmpeg", "-y", "-i", str(video),
             "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
@@ -45,7 +51,6 @@ def _pad_video_to_duration(video: Path, target_seconds: float, out: Path) -> Pat
             "-an", str(out),
         ]
     elif cur < target_seconds:
-        pad_ms = int((target_seconds - cur) * 1000)
         cmd = [
             "ffmpeg", "-y", "-i", str(video),
             "-vf",
@@ -72,12 +77,18 @@ def _pad_video_to_duration(video: Path, target_seconds: float, out: Path) -> Pat
     return out
 
 
-def sync_scene_av(video: Path, audio: Path) -> Path:
+def sync_scene_av(
+    video: Path,
+    audio: Path,
+    workdir: Path | None = None,
+) -> Path:
     """Produce a per-scene MP4 where video duration == audio duration."""
+    workdir = workdir or PATHS["renders"]
+    workdir.mkdir(parents=True, exist_ok=True)
     audio_dur = _probe_duration(audio)
-    synced = PATHS["renders"] / f"{video.stem}_synced.mp4"
+    synced = workdir / f"{video.stem}_synced.mp4"
     _pad_video_to_duration(video, audio_dur, synced)
-    final = PATHS["renders"] / f"{video.stem}_av.mp4"
+    final = workdir / f"{video.stem}_av.mp4"
     cmd = [
         "ffmpeg", "-y",
         "-i", str(synced), "-i", str(audio),
@@ -97,9 +108,15 @@ def sync_scene_av(video: Path, audio: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _concat_scenes(scene_files: list[Path], output: Path) -> Path:
+def _concat_scenes(
+    scene_files: list[Path],
+    output: Path,
+    workdir: Path | None = None,
+) -> Path:
     """Concatenate per-scene AV MP4s into the final video."""
-    list_file = PATHS["renders"] / "concat_list.txt"
+    workdir = workdir or PATHS["renders"]
+    workdir.mkdir(parents=True, exist_ok=True)
+    list_file = workdir / "concat_list.txt"
     with open(list_file, "w") as f:
         for sf in scene_files:
             f.write(f"file '{sf.resolve()}'\n")
@@ -112,7 +129,7 @@ def _concat_scenes(scene_files: list[Path], output: Path) -> Path:
         "-c:a", "aac", "-b:a", "192k",
         str(output),
     ]
-    logger.info("Concatenating %d AV scenes", len(scene_files))
+    logger.info("Concatenating %d AV scenes into %s", len(scene_files), output)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg concat failed: {result.stderr[:500]}")
@@ -124,10 +141,12 @@ def merge(
     scene_mp4s: list[Path],
     scene_wavs: list[Path],
     output: Path | None = None,
+    workspace: RenderWorkspace | None = None,
 ) -> Path:
     """Sync each scene's audio to its video, then concat into the final MP4."""
     output = output or FINAL_VIDEO
     output.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _workdir(workspace)
 
     if not scene_mp4s:
         raise ValueError("No scene videos to merge")
@@ -139,11 +158,12 @@ def merge(
         v_dur = _probe_duration(mp4)
         a_dur = _probe_duration(wav)
         logger.info(
-            "Syncing %s (video=%.2fs -> audio=%.2fs)", mp4.name, v_dur, a_dur
+            "Syncing %s (video=%.2fs -> audio=%.2fs) workdir=%s",
+            mp4.name, v_dur, a_dur, tmp,
         )
-        synced_scenes.append(sync_scene_av(mp4, wav))
+        synced_scenes.append(sync_scene_av(mp4, wav, workdir=tmp))
 
-    final = _concat_scenes(synced_scenes, output)
+    final = _concat_scenes(synced_scenes, output, workdir=tmp)
     logger.info("Final video duration: %.2fs", _probe_duration(final))
     for sf in synced_scenes:
         sf.unlink(missing_ok=True)

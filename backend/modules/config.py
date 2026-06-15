@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -47,6 +49,50 @@ MANIM_QUALITY = os.getenv("MANIM_QUALITY", "-qm")
 MANIM_MAX_RETRIES = int(os.getenv("MANIM_MAX_RETRIES", "3"))
 
 FINAL_VIDEO = PATHS["renders"] / "final_video.mp4"
+
+
+@dataclass
+class RenderWorkspace:
+    """Isolated per-request directory tree for all pipeline artifacts."""
+
+    session_id: str
+    root: Path
+    manim_dir: Path
+    media_dir: Path
+    audio_dir: Path
+    timelines_dir: Path
+    tmp_dir: Path
+    scenes_dir: Path
+
+    @classmethod
+    def make(cls, session_id: str) -> RenderWorkspace:
+        root = PATHS["renders"] / session_id
+        workspace = cls(
+            session_id=session_id,
+            root=root,
+            manim_dir=root / "manim",
+            media_dir=root / "manim" / "media",
+            audio_dir=root / "audio",
+            timelines_dir=root / "timelines",
+            tmp_dir=root / "tmp",
+            scenes_dir=root / "scenes",
+        )
+        workspace.reset()
+        return workspace
+
+    def reset(self) -> None:
+        """Remove any prior artifacts for this session id and recreate dirs."""
+        if self.root.exists():
+            shutil.rmtree(self.root)
+        for directory in (
+            self.manim_dir,
+            self.media_dir,
+            self.audio_dir,
+            self.timelines_dir,
+            self.tmp_dir,
+            self.scenes_dir,
+        ):
+            directory.mkdir(parents=True, exist_ok=True)
 
 
 def get_logger(name: str) -> logging.Logger:

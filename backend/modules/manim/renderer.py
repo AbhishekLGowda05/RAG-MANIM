@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import os
@@ -16,6 +17,7 @@ from modules.config import (
     MANIM_REPAIR_TIMEOUT,
     NVIDIA_REPAIR_MODEL,
     PATHS,
+    RenderWorkspace,
     get_logger,
 )
 
@@ -74,20 +76,39 @@ def reset_llm_repair_state() -> None:
     _llm_repair_attempts = 0
 
 
+def _scene_dest(scene_py: Path, workspace: RenderWorkspace | None) -> Path:
+    base = workspace.scenes_dir if workspace is not None else PATHS["renders"]
+    return base / f"{scene_py.stem}.mp4"
+
+
+def _media_dir(workspace: RenderWorkspace | None) -> Path:
+    if workspace is not None:
+        return workspace.media_dir
+    media = PATHS["manim"] / "media"
+    media.mkdir(parents=True, exist_ok=True)
+    return media
+
+
 def render(
     scene_py: Path,
     scene_class: str = "GeneratedScene",
     fallback_code: str | None = None,
+    workspace: RenderWorkspace | None = None,
 ) -> Path:
     """Render a Manim scene file to MP4 with retry on failure."""
-    media_dir = PATHS["manim"] / "media"
-    media_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Rendering Manim scene: %s", scene_py.name)
+    media_dir = _media_dir(workspace)
+    dest = _scene_dest(scene_py, workspace)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    logger.info(
+        "[RENDER] scene=%s workspace=%s dest=%s",
+        scene_py.stem,
+        media_dir,
+        dest,
+    )
 
     for attempt in range(MANIM_MAX_RETRIES):
         mp4 = _run_manim(scene_py, scene_class, media_dir)
         if mp4 and mp4.exists():
-            dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
             if mp4 != dest:
                 shutil.copy2(mp4, dest)
             logger.info("Render success: %s (attempt %d)", dest, attempt + 1)
@@ -123,18 +144,18 @@ def render(
         scene_py.write_text(strip_latex_mobjects(fallback_code), encoding="utf-8")
         mp4 = _run_manim(scene_py, scene_class, media_dir)
         if mp4 and mp4.exists():
-            dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
             shutil.copy2(mp4, dest)
             logger.info("Template fallback render success: %s", dest)
             return dest
 
-    return _render_minimal_fallback(scene_py, scene_class, media_dir)
+    return _render_minimal_fallback(scene_py, scene_class, media_dir, dest)
 
 
 def _render_minimal_fallback(
     scene_py: Path,
     scene_class: str,
     media_dir: Path,
+    dest: Path,
 ) -> Path:
     """Guaranteed last-resort render so the pipeline never crashes on Manim failure."""
     for label, code in (
@@ -149,12 +170,10 @@ def _render_minimal_fallback(
         scene_py.write_text(code, encoding="utf-8")
         mp4 = _run_manim(scene_py, scene_class, media_dir)
         if mp4 and mp4.exists():
-            dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
             shutil.copy2(mp4, dest)
             logger.info("%s fallback render success: %s", label, dest)
             return dest
 
-    dest = PATHS["renders"] / f"{scene_py.stem}.mp4"
     logger.error(
         "Minimal fallback renders failed for %s; writing placeholder mp4 path %s",
         scene_py.name,
@@ -164,6 +183,29 @@ def _render_minimal_fallback(
     if not dest.exists():
         dest.touch()
     return dest
+
+
+def _find_scene_mp4(
+    media_dir: Path,
+    scene_py: Path,
+    scene_class: str,
+    render_start: float,
+) -> Path | None:
+    """Locate the MP4 produced by the current render (never a stale file)."""
+    videos_root = media_dir / "videos" / scene_py.stem
+    if videos_root.is_dir():
+        for quality_dir in sorted(videos_root.iterdir(), reverse=True):
+            candidate = quality_dir / f"{scene_class}.mp4"
+            if candidate.is_file() and candidate.stat().st_mtime >= render_start:
+                return candidate
+
+    candidates = [
+        p for p in media_dir.rglob("*.mp4")
+        if scene_py.stem in p.as_posix() and p.stat().st_mtime >= render_start
+    ]
+    if candidates:
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    return None
 
 
 def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None:
@@ -184,6 +226,7 @@ def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None
     env = os.environ.copy()
     backend_root = str(PATHS["root"])
     env["PYTHONPATH"] = backend_root + os.pathsep + env.get("PYTHONPATH", "")
+    render_start = time.time()
     try:
         result = subprocess.run(
             cmd,
@@ -197,13 +240,9 @@ def _run_manim(scene_py: Path, scene_class: str, media_dir: Path) -> Path | None
             _last_error = result.stderr or result.stdout
             return None
 
-        mp4_files = sorted(
-            media_dir.rglob("*.mp4"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if mp4_files:
-            return mp4_files[0]
+        mp4 = _find_scene_mp4(media_dir, scene_py, scene_class, render_start)
+        if mp4:
+            return mp4
         _last_error = "No MP4 output found after render"
         return None
     except subprocess.TimeoutExpired:

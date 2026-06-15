@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, BackgroundTasks, HTTPException
@@ -51,7 +52,7 @@ os.environ["PATH"] = os.pathsep.join(path_list)
 logger.info(f"Dynamically injected execution paths. Updated PATH: {os.environ['PATH'][:300]}...")
 
 import modules.config
-from modules.config import PATHS
+from modules.config import PATHS, RenderWorkspace
 from modules.llm.nvidia_client import NvidiaClient
 from modules.planning.storyboard import build_storyboard
 from modules.planning.semantic_plan import build_all_semantic_plans
@@ -372,6 +373,11 @@ async def run_pipeline_task(
         )
 
     reset_llm_repair_state()
+    workspace = RenderWorkspace.make(session_id)
+    logger.info(
+        "[SESSION] isolated workspace=%s force_regenerate=True",
+        workspace.root,
+    )
     # 1. Update API Keys based on request payload parameters
     g_key = gemini_api_key or api_key
     n_key = nvidia_api_key or api_key
@@ -616,7 +622,7 @@ async def run_pipeline_task(
         audio_paths = {}
         for plan in plans:
             sid = plan["scene_id"]
-            wav_path = ROOT / "data" / "audio" / f"scene_{sid}.wav"
+            wav_path = workspace.audio_dir / f"scene_{sid}.wav"
             wav, _duration = synthesize(plan["narration"], wav_path)
             audio_paths[sid] = wav
             
@@ -625,11 +631,13 @@ async def run_pipeline_task(
 
         # --- Stage 5: Sync Timelines ---
         await queue.put({"stage": "tts", "progress": 83, "message": "[5/8] Aligning audio timestamps and event scheduling..."})
-        timelines = synchronize_all(plans, audio_paths)
+        timelines = synchronize_all(plans, audio_paths, workspace=workspace)
 
         # --- Stage 6: Manim Compilation ---
         await queue.put({"stage": "generating", "progress": 87, "message": "[6/8] Compiling scenes into timed mathematical Python Manim code..."})
-        manim_files = semantic_compile_all(plans, timelines)
+        manim_files = semantic_compile_all(
+            plans, timelines, workspace=workspace, force_regenerate=True
+        )
         
         # Read the generated Manim code and concatenate for Script Inspector!
         manim_code_combined = ""
@@ -653,19 +661,16 @@ async def run_pipeline_task(
         await queue.put({"stage": "generating", "progress": 92, "message": "[7/8] Spawning Manim Community engine to render vector animations..."})
         scene_mp4s = []
         for manim_py, fallback_code in manim_files:
-            mp4 = render(manim_py, fallback_code=fallback_code)
+            mp4 = render(manim_py, fallback_code=fallback_code, workspace=workspace)
             scene_mp4s.append(mp4)
 
         # --- Stage 8: Merge audio + video ---
         await queue.put({"stage": "generating", "progress": 96, "message": "[8/8] Merging high-quality scenes with voice overlays via FFmpeg..."})
-        
-        # Create a unique output directory under generated/session_id
-        session_render_dir = ROOT / "data" / "renders" / session_id
-        session_render_dir.mkdir(parents=True, exist_ok=True)
-        final_mp4_path = session_render_dir / f"manim_{session_id}.mp4"
-        
+
+        final_mp4_path = workspace.root / f"manim_{session_id}.mp4"
+
         scene_wavs = [audio_paths[p["scene_id"]] for p in plans]
-        final = merge(scene_mp4s, scene_wavs, output=final_mp4_path)
+        final = merge(scene_mp4s, scene_wavs, output=final_mp4_path, workspace=workspace)
         
         video_url = f"/generated/{session_id}/manim_{session_id}.mp4"
 
@@ -743,7 +748,7 @@ async def run_pipeline_task(
 
 @app.post("/api/pipeline/run")
 async def start_pipeline(req: PipelineRunRequest, background_tasks: BackgroundTasks):
-    session_id = f"session_{int(time.time() * 1000)}"
+    session_id = f"session_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
 
     resolution_preview = resolve_document(req.documentId, req.subject)
     if resolution_preview.llm_only:

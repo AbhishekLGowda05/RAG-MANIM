@@ -36,6 +36,11 @@ _TEX_CALL_RE = re.compile(
     re.DOTALL,
 )
 
+_TEXT_CALL_RE = re.compile(
+    r"Text\(\s*(r?)([\"'])(.*?)\2([^)]*)\)",
+    re.DOTALL,
+)
+
 
 def has_latex_mobjects(code: str) -> bool:
     return "MathTex(" in code or re.search(r"\bTex\(", code) is not None
@@ -63,6 +68,20 @@ def latex_to_plain(tex: str) -> str:
     return s or tex
 
 
+def strip_latex_in_text_literals(code: str) -> str:
+    """Replace LaTeX tokens inside Text(...) string literals with plain text."""
+
+    def _repl(match: re.Match[str]) -> str:
+        text = match.group(3)
+        if "\\" not in text and "$" not in text:
+            return match.group(0)
+        plain = latex_to_plain(text)
+        kwargs = match.group(4)
+        return f"Text({plain!r}{kwargs})"
+
+    return _TEXT_CALL_RE.sub(_repl, code)
+
+
 def strip_latex_mobjects(code: str) -> str:
     """Replace MathTex/Tex with Text so scenes render without a LaTeX install."""
 
@@ -76,4 +95,5 @@ def strip_latex_mobjects(code: str) -> str:
             kwargs = f', color="#e0e6f0"{kwargs}'
         return f'Text({plain!r}{kwargs})'
 
-    return _TEX_CALL_RE.sub(_repl, code)
+    code = _TEX_CALL_RE.sub(_repl, code)
+    return strip_latex_in_text_literals(code)
