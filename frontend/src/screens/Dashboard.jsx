@@ -3,15 +3,17 @@ import { useProfile } from '../context/ProfileContext';
 import { useSession } from '../context/SessionContext';
 import MetricCard from '../components/MetricCard';
 import SubjectPill from '../components/SubjectPill';
+import ThetaGauge from '../components/ThetaGauge';
 import topicCatalog from '../mock/topic_catalog.json';
 import {
   formatSessionDate,
   getSessionsThisWeek,
   computeActiveStreak,
 } from '../utils/sessionHelpers';
+import { formatTheta, getLabelFromTheta, getZoneColor } from '../utils/thetaUtils';
 
-export default function Dashboard({ setActiveScreen }) {
-  const { profile } = useProfile();
+export default function Dashboard({ setActiveScreen, onRetakeDiagnostic }) {
+  const { profile, subjectThetas, resetSubjectThetas } = useProfile();
   const { startPipeline, loadSessionById } = useSession();
   const [historyData, setHistoryData] = useState({ sessions: [] });
   const [analyticsData, setAnalyticsData] = useState({
@@ -109,6 +111,23 @@ export default function Dashboard({ setActiveScreen }) {
   const minutesToday = analyticsData.daily_activity?.find(d => d.date === new Date().toISOString().split('T')[0])?.minutes || 0;
   const streakPercent = Math.min((minutesToday / 30) * 100, 100);
 
+  const handleRetakeDiagnostic = async () => {
+    const confirmed = window.confirm(
+      'This will reset your ability estimates for Physics and Chemistry. Continue?'
+    );
+    if (!confirmed) return;
+    await resetSubjectThetas();
+    if (onRetakeDiagnostic) {
+      onRetakeDiagnostic();
+    }
+  };
+
+  const getSubjectTheta = (subject) =>
+    subjectThetas?.[subject] ?? profile.subject_thetas?.[subject] ?? null;
+
+  const hasDiagnosticResults =
+    getSubjectTheta('Physics') != null || getSubjectTheta('Chemistry') != null;
+
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
       
@@ -129,6 +148,94 @@ export default function Dashboard({ setActiveScreen }) {
             }
           </p>
         </div>
+
+        {hasDiagnosticResults && (
+          <div
+            className="learnos-card"
+            style={{
+              marginBottom: 'var(--space-8)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-5)',
+              background: 'var(--bg-surface)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3
+                style={{
+                  fontSize: '12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Your Profile
+              </h3>
+              <button
+                type="button"
+                onClick={handleRetakeDiagnostic}
+                className="btn btn-ghost"
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                Retake Diagnostic
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                gap: 'var(--space-4)',
+              }}
+            >
+              {['Physics', 'Chemistry'].map((subject) => {
+                const theta = getSubjectTheta(subject);
+                if (theta == null) return null;
+                const label = getLabelFromTheta(theta);
+                const color = getZoneColor(theta);
+                return (
+                  <div
+                    key={subject}
+                    style={{
+                      padding: 'var(--space-4)',
+                      borderRadius: 'var(--r-md)',
+                      background: 'var(--bg-raised)',
+                      border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 'var(--space-3)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {subject}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '100px',
+                          background: `${color}22`,
+                          color,
+                          border: `1px solid ${color}44`,
+                        }}
+                      >
+                        {label}
+                      </span>
+                    </div>
+                    <div
+                      className="mono-text"
+                      style={{ fontSize: '28px', color: 'var(--text-primary)', lineHeight: 1 }}
+                    >
+                      θ = {formatTheta(theta)}
+                    </div>
+                    <ThetaGauge theta={theta} size="compact" animate={false} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Stats metrics row grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-8)' }}>

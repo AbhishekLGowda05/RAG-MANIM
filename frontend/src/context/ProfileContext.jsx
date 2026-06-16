@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const ProfileContext = createContext();
 
@@ -17,13 +17,38 @@ const DEFAULT_PROFILE = {
     Physics: 50,
     Mathematics: 50
   },
+  subject_thetas: {
+    Physics: null,
+    Chemistry: null,
+  },
   created_at: '',
   updated_at: ''
 };
 
 export const ProfileProvider = ({ children }) => {
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
+  const [subjectThetas, setSubjectThetas] = useState({ ...DEFAULT_PROFILE.subject_thetas });
   const [loading, setLoading] = useState(true);
+
+  const loadSubjectThetas = useCallback(async () => {
+    try {
+      const response = await fetch('/api/learner/theta');
+      if (response.ok) {
+        const data = await response.json();
+        const thetas = data.subject_thetas || {};
+        setSubjectThetas((prev) => ({ ...prev, ...thetas }));
+        setProfile((prev) => ({
+          ...prev,
+          theta: data.theta ?? prev.theta,
+          subject_thetas: { ...DEFAULT_PROFILE.subject_thetas, ...thetas },
+        }));
+        return thetas;
+      }
+    } catch (err) {
+      console.warn('Failed to load subject thetas:', err);
+    }
+    return null;
+  }, []);
 
   // Load profile from API or LocalStorage fallback
   useEffect(() => {
@@ -33,7 +58,18 @@ export const ProfileProvider = ({ children }) => {
         if (response.ok) {
           const data = await response.json();
           if (data && data.learner_id) {
-            setProfile(data);
+            setProfile({
+              ...DEFAULT_PROFILE,
+              ...data,
+              subject_thetas: {
+                ...DEFAULT_PROFILE.subject_thetas,
+                ...(data.subject_thetas || {}),
+              },
+            });
+            if (data.subject_thetas) {
+              setSubjectThetas((prev) => ({ ...prev, ...data.subject_thetas }));
+            }
+            await loadSubjectThetas();
             setLoading(false);
             return;
           }
@@ -44,9 +80,32 @@ export const ProfileProvider = ({ children }) => {
 
       // Check local storage fallback
       const local = localStorage.getItem('learnos_profile');
+      const learnerLocal = localStorage.getItem('aicarls_learner_profile');
       if (local) {
         try {
-          setProfile(JSON.parse(local));
+          const parsed = JSON.parse(local);
+          setProfile({
+            ...DEFAULT_PROFILE,
+            ...parsed,
+            subject_thetas: {
+              ...DEFAULT_PROFILE.subject_thetas,
+              ...(parsed.subject_thetas || {}),
+            },
+          });
+          if (parsed.subject_thetas) {
+            setSubjectThetas((prev) => ({ ...prev, ...parsed.subject_thetas }));
+          }
+        } catch (e) {}
+      } else if (learnerLocal) {
+        try {
+          const parsed = JSON.parse(learnerLocal);
+          if (parsed.subject_thetas) {
+            setSubjectThetas(parsed.subject_thetas);
+            setProfile((prev) => ({
+              ...prev,
+              subject_thetas: parsed.subject_thetas,
+            }));
+          }
         } catch (e) {}
       } else {
         // Generate new guest profile
@@ -59,10 +118,12 @@ export const ProfileProvider = ({ children }) => {
         setProfile(newProfile);
         localStorage.setItem('learnos_profile', JSON.stringify(newProfile));
       }
+
+      await loadSubjectThetas();
       setLoading(false);
     }
     loadProfile();
-  }, []);
+  }, [loadSubjectThetas]);
 
   // Save profile to API and local storage
   const updateProfile = async (updates) => {
@@ -144,9 +205,21 @@ export const ProfileProvider = ({ children }) => {
       if (response.ok) {
         const data = await response.json();
         if (data && data.learner_id) {
-          setProfile(data);
-          localStorage.setItem('learnos_profile', JSON.stringify(data));
-          return data;
+          const merged = {
+            ...DEFAULT_PROFILE,
+            ...data,
+            subject_thetas: {
+              ...DEFAULT_PROFILE.subject_thetas,
+              ...(data.subject_thetas || {}),
+            },
+          };
+          setProfile(merged);
+          if (data.subject_thetas) {
+            setSubjectThetas((prev) => ({ ...prev, ...data.subject_thetas }));
+          }
+          localStorage.setItem('learnos_profile', JSON.stringify(merged));
+          await loadSubjectThetas();
+          return merged;
         }
       }
     } catch (err) {
@@ -155,8 +228,55 @@ export const ProfileProvider = ({ children }) => {
     return null;
   };
 
+  const updateSubjectTheta = useCallback(async (subject, theta) => {
+    const rounded = Math.round(theta * 100) / 100;
+    setSubjectThetas((prev) => {
+      const next = { ...prev, [subject]: rounded };
+      setProfile((p) => ({
+        ...p,
+        subject_thetas: next,
+        theta: rounded,
+        updated_at: new Date().toISOString(),
+      }));
+      return next;
+    });
+
+    try {
+      await fetch('/api/learner/theta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theta: rounded, subject }),
+      });
+    } catch (err) {
+      console.error('Failed to sync subject theta:', err);
+    }
+  }, []);
+
+  const resetSubjectThetas = useCallback(async () => {
+    const cleared = { ...DEFAULT_PROFILE.subject_thetas };
+    setSubjectThetas(cleared);
+    setProfile((prev) => ({
+      ...prev,
+      subject_thetas: cleared,
+      theta: null,
+    }));
+    localStorage.removeItem('aicarls_learner_profile');
+  }, []);
+
   return (
-    <ProfileContext.Provider value={{ profile, updateProfile, resetProfile, reloadProfile, loading }}>
+    <ProfileContext.Provider
+      value={{
+        profile,
+        subjectThetas,
+        updateProfile,
+        resetProfile,
+        reloadProfile,
+        updateSubjectTheta,
+        resetSubjectThetas,
+        loadSubjectThetas,
+        loading,
+      }}
+    >
       {children}
     </ProfileContext.Provider>
   );

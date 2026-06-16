@@ -746,29 +746,6 @@ async def health_check():
     }
 
 
-@app.post("/api/diagnostic/start")
-async def diagnostic_start(payload: dict):
-    """Simple diagnostic start endpoint (fallback stub).
-    Returns one sample item for the frontend diagnostic flow.
-    """
-    # In the full system this would run an adaptive item selection engine.
-    item = {
-        "item_id": "d_1",
-        "question": "Which quantity is conserved in an elastic collision?",
-        "options": ["Kinetic energy", "Momentum", "Temperature"],
-        "answer": "Momentum"
-    }
-    return {"item": item}
-
-
-@app.post("/api/diagnostic/answer")
-async def diagnostic_answer(req: dict):
-    """Simple diagnostic answer handler (fallback stub).
-    Accepts responses and returns a completion flag and theta estimate.
-    """
-    # Pretend the diagnostic is complete and return a mid-level ability estimate.
-    return {"complete": True, "theta": 50.0}
-
 @app.post("/api/curriculum/upload")
 async def upload_pdf(file: UploadFile = File(...)):
     from modules.config import PATHS

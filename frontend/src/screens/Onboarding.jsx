@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useProfile } from '../context/ProfileContext';
 import GenerationShimmer from '../components/GenerationShimmer';
-import DiagnosticQuiz from '../components/DiagnosticQuiz';
-export default function Onboarding({ onComplete }) {
+import DiagnosticFlow from '../components/DiagnosticFlow';
+export default function Onboarding({ onComplete, initialStep = 1 }) {
   const { profile, updateProfile, reloadProfile } = useProfile();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(initialStep);
   const [name, setName] = useState(profile.name || '');
   const [level, setLevel] = useState(profile.academic_level || 'class_11');
   const [targets, setTargets] = useState(profile.exam_target || ['JEE']);
@@ -329,8 +329,8 @@ export default function Onboarding({ onComplete }) {
           )}
 
           {step === 5 && (
-            <DiagnosticQuiz 
-              onComplete={async (theta) => {
+            <DiagnosticFlow
+              onComplete={async () => {
                 const fresh = await reloadProfile();
                 if (fresh && fresh.confidence_map) {
                   setConfMap(fresh.confidence_map);
@@ -340,7 +340,7 @@ export default function Onboarding({ onComplete }) {
                 setTimeout(() => {
                   setGeneratingSummary(false);
                 }, 1500);
-              }} 
+              }}
               onSkip={() => {
                 setGeneratingSummary(true);
                 setStep(6);

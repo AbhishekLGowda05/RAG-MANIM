@@ -1,8 +1,9 @@
 import { useProfile } from '../context/ProfileContext';
 import { useTheme } from '../context/ThemeContext';
+import { formatTheta, getLabelFromTheta, getZoneColor } from '../utils/thetaUtils';
 
 export default function Sidebar({ activeScreen, setActiveScreen, onSignOut }) {
-  const { profile } = useProfile();
+  const { profile, subjectThetas } = useProfile();
   const { theme, toggleTheme } = useTheme();
 
   const navItems = [
@@ -57,6 +58,44 @@ export default function Sidebar({ activeScreen, setActiveScreen, onSignOut }) {
             </span>
           </div>
         </div>
+
+        {(['Physics', 'Chemistry']).map((subject) => {
+          const theta = subjectThetas?.[subject] ?? profile.subject_thetas?.[subject];
+          if (theta == null) return null;
+          const label = getLabelFromTheta(theta);
+          const color = getZoneColor(theta);
+          return (
+            <div
+              key={subject}
+              style={{
+                marginTop: 'var(--space-3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 10px',
+                borderRadius: 'var(--r-sm)',
+                background: 'var(--bg-overlay)',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: color,
+                  flexShrink: 0,
+                }}
+              />
+              <span>
+                θ {subject.slice(0, 3)} = {formatTheta(theta)} · {label}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Main Navigation Item List */}

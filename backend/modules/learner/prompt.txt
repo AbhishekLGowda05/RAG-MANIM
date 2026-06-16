@@ -1,0 +1,287 @@
+I need you to implement a complete IRT-based theta estimation system 
+on the FRONTEND ONLY. This is a simulation — no backend calls for 
+theta, no real IRT math library needed. Just make theta exist, 
+persist, and feel real. Here is exactly what to build:
+
+---
+
+## CONTEXT: What is Theta?
+
+Theta (θ) is a numerical score representing a learner's ability level.
+- Range: typically -3.0 to +3.0
+- θ < -1.0 → weak learner
+- -1.0 ≤ θ < 0.0 → below average
+- 0.0 ≤ θ < 0.5 → average
+- 0.5 ≤ θ < 1.0 → above average
+- θ ≥ 1.0 → strong learner
+
+Theta is estimated by giving the user adaptive diagnostic questions 
+and updating the estimate after each answer. In real IRT, this uses 
+Maximum A Posteriori inference. We are SIMULATING this on the frontend.
+
+---
+
+## WHAT TO BUILD
+
+### STEP 1 — Diagnostic Onboarding Screen
+
+When a new user visits for the first time (no theta in localStorage), 
+show a full-screen diagnostic flow BEFORE the main dashboard.
+
+The screen should show:
+- A progress bar (e.g. "Question 3 of 7")
+- One question at a time
+- 4 multiple choice options (A, B, C, D)
+- A "Next" button that only activates after an option is selected
+- DO NOT show which answer is correct — just record the response
+
+Use these 7 hardcoded questions (Physics/Math, NCERT style).
+Each question has a hidden difficulty value b (shown in comments, 
+NOT displayed to user):
+
+Question 1 (b = -1.5, easy):
+Q: "What is the SI unit of force?"
+A) Joule  B) Newton  C) Watt  D) Pascal
+Correct: B
+
+Question 2 (b = -1.0, easy-medium):
+Q: "If a body moves with uniform velocity, its acceleration is:"
+A) Maximum  B) Minimum  C) Zero  D) Variable
+Correct: C
+
+Question 3 (b = -0.5, medium):
+Q: "Which law states that every action has an equal and opposite 
+reaction?"
+A) Newton's First Law  B) Newton's Second Law  
+C) Newton's Third Law  D) Law of Gravitation
+Correct: C
+
+Question 4 (b = 0.0, medium):
+Q: "The momentum of a body of mass 2kg moving at 5 m/s is:"
+A) 2.5 kg⋅m/s  B) 7 kg⋅m/s  C) 10 kg⋅m/s  D) 3 kg⋅m/s
+Correct: C
+
+Question 5 (b = 0.5, medium-hard):
+Q: "In Simple Harmonic Motion, the restoring force is proportional to:"
+A) Velocity  B) Displacement  C) Acceleration  D) Time period
+Correct: B
+
+Question 6 (b = 1.0, hard):
+Q: "A particle undergoes SHM with amplitude A and angular frequency ω. 
+Its maximum velocity is:"
+A) Aω²  B) A/ω  C) Aω  D) A²ω
+Correct: C
+
+Question 7 (b = 1.5, very hard):
+Q: "The escape velocity from Earth's surface is approximately 11.2 km/s.
+If Earth's radius doubled but mass stayed the same, escape velocity 
+would become:"
+A) 22.4 km/s  B) 5.6 km/s  C) 7.92 km/s  D) 11.2 km/s
+Correct: C
+
+---
+
+### STEP 2 — Theta Estimation Algorithm (Frontend Simulation)
+
+After ALL 7 questions are answered, compute theta using this 
+simplified simulation of MAP IRT estimation:
+
+```javascript
+function estimateTheta(responses) {
+  // responses = array of { correct: boolean, b: number }
+  // b values: [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5]
+  // discrimination parameter a = 1.0 for all items (fixed)
+  
+  let theta = 0.0; // prior mean
+  const a = 1.0;   // discrimination (fixed)
+  
+  // Run 50 gradient ascent iterations (MAP estimation simulation)
+  for (let iter = 0; iter < 50; iter++) {
+    let gradient = -theta / 1.0; // prior gradient (N(0,1))
+    
+    for (const { correct, b } of responses) {
+      // 2PL probability
+      const P = 1 / (1 + Math.exp(-a * (theta - b)));
+      // Gradient contribution
+      gradient += correct ? a * (1 - P) : -a * P;
+    }
+    
+    theta += 0.1 * gradient; // learning rate 0.1
+    
+    // Clamp to [-3, 3]
+    theta = Math.max(-3.0, Math.min(3.0, theta));
+  }
+  
+  return Math.round(theta * 100) / 100; // round to 2 decimal places
+}
+```
+
+---
+
+### STEP 3 — Store Theta in localStorage
+
+After computing theta, store the full learner profile:
+
+```javascript
+const learnerProfile = {
+  theta: estimateTheta(responses),
+  completedDiagnostic: true,
+  diagnosticDate: new Date().toISOString(),
+  totalQuestionsAnswered: 7,
+  correctCount: responses.filter(r => r.correct).length,
+  abilityLabel: getLabelFromTheta(theta), // see below
+};
+
+localStorage.setItem('aicarls_learner_profile', 
+  JSON.stringify(learnerProfile));
+```
+
+Ability label function:
+```javascript
+function getLabelFromTheta(theta) {
+  if (theta < -1.0) return 'Beginner';
+  if (theta < 0.0)  return 'Developing';
+  if (theta < 0.5)  return 'Intermediate';
+  if (theta < 1.0)  return 'Advanced';
+  return 'Expert';
+}
+```
+
+---
+
+### STEP 4 — Competency Result Screen
+
+After computing theta, show a result screen (before the dashboard) 
+with:
+
+- A large animated theta value display: "θ = 0.73"
+- The ability label badge (e.g. "Advanced")
+- A horizontal gauge/slider showing theta on the -3 to +3 scale, 
+  with colored zones:
+  - Red zone: -3 to -1 (Beginner)
+  - Orange zone: -1 to 0 (Developing)
+  - Yellow zone: 0 to 0.5 (Intermediate)
+  - Blue zone: 0.5 to 1 (Advanced)
+  - Green zone: 1 to 3 (Expert)
+- Score summary: "You answered X out of 7 questions correctly"
+- A tagline based on label:
+  - Beginner: "We'll build your foundation step by step."
+  - Developing: "We'll reinforce the concepts you need."
+  - Intermediate: "We'll match explanations to your level."
+  - Advanced: "We'll challenge you with deeper content."
+  - Expert: "We'll give you concise, high-level explanations."
+- A "Start Learning" button that goes to the main dashboard
+
+---
+
+### STEP 5 — Theta Visible Throughout the App
+
+Once on the dashboard, theta must be visible at all times:
+
+1. In the sidebar/navbar, show a small "θ = 0.73 · Advanced" chip 
+   with a colored dot matching the zone color.
+
+2. On the dashboard home, show a "Your Profile" card with:
+   - The theta value prominently
+   - The ability label
+   - The gauge visualization (smaller version)
+   - A "Retake Diagnostic" button that clears localStorage and 
+     restarts the flow
+
+3. Anywhere a video/lesson is shown, display a small tag saying 
+   "Adapted for θ = 0.73" so it feels like personalization is 
+   happening even though it's just a display.
+
+---
+
+### STEP 6 — App Entry Logic
+
+On every app load, check localStorage at the root level:
+
+```javascript
+const profile = JSON.parse(
+  localStorage.getItem('aicarls_learner_profile') || 'null'
+);
+
+if (!profile || !profile.completedDiagnostic) {
+  // Show diagnostic onboarding flow
+  renderDiagnosticFlow();
+} else {
+  // Load dashboard normally, theta is available from profile
+  renderDashboard(profile);
+}
+```
+
+---
+
+### STEP 7 — Retake / Reset Flow
+
+The "Retake Diagnostic" button should:
+1. Show a confirmation dialog: "This will reset your ability 
+   estimate. Continue?"
+2. On confirm: clear 'aicarls_learner_profile' from localStorage
+3. Reload the app → diagnostic flow starts again
+
+---
+
+## WHAT NOT TO DO
+
+- Do NOT send theta to any backend endpoint
+- Do NOT block the UI waiting for any API call during the diagnostic
+- Do NOT show correct/incorrect feedback during the quiz
+- Do NOT change any existing lesson generation logic
+- Do NOT add theta as a parameter to any existing API calls
+- Theta is display-only for now — it exists, it's computed, 
+  it's stored, it's shown everywhere, but it doesn't wire into 
+  any generation pipeline yet
+
+---
+
+## FILES TO CREATE / MODIFY
+
+- Create: `src/components/DiagnosticFlow.tsx` (or .jsx)
+  - The 7-question quiz component
+  - Theta estimation logic
+  - Result screen component
+
+- Create: `src/hooks/useLearnerProfile.ts`
+  - Hook that reads/writes localStorage
+  - Returns { theta, abilityLabel, completedDiagnostic, 
+    resetProfile }
+
+- Modify: `src/App.tsx` (or root component)
+  - Add entry logic to gate on diagnostic completion
+
+- Modify: `src/components/Sidebar.tsx` (or Navbar)
+  - Add theta chip display
+
+- Modify: `src/components/Dashboard.tsx` (or home page)
+  - Add "Your Profile" card with theta gauge
+
+---
+
+## STYLING NOTES
+
+- The diagnostic screen should feel clinical and focused — 
+  dark background, single centered card, large question text, 
+  clean option buttons that highlight on selection
+- The result screen should feel rewarding — animate the theta 
+  value counting up to the final value over 1.5 seconds
+- The gauge should animate the indicator sliding to the correct 
+  position when the result screen loads
+- Use the existing design system / Tailwind classes already in 
+  the project — don't introduce new CSS frameworks
+
+---
+
+## EXAMPLE THETA VALUES TO TEST WITH
+
+To verify it works, these scenarios should produce approximately:
+
+- All 7 correct → theta ≈ +1.8 to +2.2 (Expert)
+- First 4 correct, last 3 wrong → theta ≈ +0.1 to +0.4 (Intermediate)
+- First 2 correct, rest wrong → theta ≈ -0.8 to -0.5 (Developing)
+- All wrong → theta ≈ -1.8 to -2.2 (Beginner)
+
+These are the values the gradient ascent algorithm above will 
+produce — verify against them after implementation.

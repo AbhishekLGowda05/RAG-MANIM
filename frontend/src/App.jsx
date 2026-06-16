@@ -25,6 +25,7 @@ function AppContent() {
   // Navigation states
   const [showLanding, setShowLanding] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingInitialStep, setOnboardingInitialStep] = useState(1);
   const [activeScreen, setActiveScreen] = useState('dashboard');
   const [pendingTopic, setPendingTopic] = useState(null);
   const { startPipeline } = useSession();
@@ -87,8 +88,10 @@ function AppContent() {
   if (showOnboarding) {
     return (
       <Onboarding
+        initialStep={onboardingInitialStep}
         onComplete={() => {
           setShowOnboarding(false);
+          setOnboardingInitialStep(1);
           // If onboarding completed and there is a pending topic (voice input), start the pipeline
           if (pendingTopic) {
             startPipeline(pendingTopic);
@@ -102,11 +105,22 @@ function AppContent() {
     );
   }
 
+  const handleRetakeDiagnostic = () => {
+    setShowLanding(false);
+    setOnboardingInitialStep(5);
+    setShowOnboarding(true);
+  };
+
   // Helper function to render active dashboard widget screen
   const renderScreen = () => {
     switch (activeScreen) {
       case 'dashboard':
-        return <Dashboard setActiveScreen={setActiveScreen} />;
+        return (
+          <Dashboard
+            setActiveScreen={setActiveScreen}
+            onRetakeDiagnostic={handleRetakeDiagnostic}
+          />
+        );
       case 'workspace':
         return <Workspace />;
       case 'library':
