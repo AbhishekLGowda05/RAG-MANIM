@@ -20,6 +20,8 @@ PATHS = {
     "renders": ROOT / "data" / "renders",
     "piper_models": ROOT / "data" / "models" / "piper",
     "samples": ROOT / "samples",
+    "textbooks": ROOT / "data" / "textbooks",
+    "curriculum_results": ROOT / "results",
 }
 
 for _path in PATHS.values():

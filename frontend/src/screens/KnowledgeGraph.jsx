@@ -46,6 +46,7 @@ export default function KnowledgeGraph({ setActiveScreen }) {
 
   // Load history metadata if any to overlay completed node markers
   const [historyIds, setHistoryIds] = useState([]);
+  
   useEffect(() => {
     async function loadHistory() {
       try {
@@ -60,6 +61,60 @@ export default function KnowledgeGraph({ setActiveScreen }) {
       } catch (err) {}
     }
     loadHistory();
+  }, []);
+
+  useEffect(() => {
+    async function loadCurriculum() {
+      try {
+        const docRes = await fetch('/api/curriculum/documents');
+        if (docRes.ok) {
+          const docData = await docRes.json();
+          if (docData.documents && docData.documents.length > 0) {
+            const docId = docData.documents[0].id;
+            const structRes = await fetch(`/api/curriculum/structure/${docId}`);
+            if (structRes.ok) {
+              const structData = await structRes.json();
+              if (structData && structData.nodes) {
+                // Transform into d3 graph format
+                const nodes = [];
+                const links = [];
+                Object.values(structData.nodes).forEach((n, i) => {
+                  nodes.push({
+                    id: n.id || String(i),
+                    label: n.title,
+                    subject: 'Physics', // Or derived
+                    x: Math.random() * 600,
+                    y: Math.random() * 400,
+                    radius: 20,
+                    summary: n.summary,
+                    details: n.keywords ? n.keywords.join(', ') : ''
+                  });
+                });
+                
+                // Fetch concept graph for links
+                try {
+                    const cgRes = await fetch('/results/concept_graph.json');
+                    if (cgRes.ok) {
+                        const cgData = await cgRes.json();
+                        Object.keys(cgData).forEach(nodeId => {
+                            cgData[nodeId].prerequisites.forEach(prereq => {
+                                links.push({ source: prereq, target: nodeId });
+                            });
+                        });
+                    }
+                } catch(e) {}
+                
+                setGraphData({ nodes, links });
+                return;
+              }
+            }
+          }
+        }
+      } catch (err) {}
+      // Fallback to MOCK_SYLLABUS
+      setGraphData(MOCK_SYLLABUS);
+    }
+    loadCurriculum();
   }, []);
 
   // Simple Spring physics simulation loop

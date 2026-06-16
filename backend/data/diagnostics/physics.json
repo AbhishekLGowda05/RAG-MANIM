@@ -1,0 +1,152 @@
+[
+  {
+    "question_id": "phy_001",
+    "node_id": "speed",
+    "difficulty": -1.5,
+    "discrimination": 1.2,
+    "grade_range": [5, 8],
+    "question": "What device is used to measure the speed of a moving vehicle?",
+    "options": ["Odometer", "Speedometer", "Thermometer", "Barometer"],
+    "answer": "Speedometer"
+  },
+  {
+    "question_id": "phy_002",
+    "node_id": "magnets",
+    "difficulty": -1.2,
+    "discrimination": 1.1,
+    "grade_range": [5, 8],
+    "question": "What happens when two north poles of magnets are brought close to each other?",
+    "options": ["They attract each other", "They repel each other", "Nothing happens", "They turn into wood"],
+    "answer": "They repel each other"
+  },
+  {
+    "question_id": "phy_003",
+    "node_id": "gravity",
+    "difficulty": -1.0,
+    "discrimination": 1.3,
+    "grade_range": [5, 8],
+    "question": "Which force pulls objects toward the center of the Earth?",
+    "options": ["Friction", "Magnetism", "Gravity", "Electrostatic"],
+    "answer": "Gravity"
+  },
+  {
+    "question_id": "phy_004",
+    "node_id": "light",
+    "difficulty": -0.8,
+    "discrimination": 1.0,
+    "grade_range": [5, 8],
+    "question": "Objects that do not allow any light to pass through them are called:",
+    "options": ["Transparent", "Translucent", "Opaque", "Luminous"],
+    "answer": "Opaque"
+  },
+  {
+    "question_id": "phy_005",
+    "node_id": "motion",
+    "difficulty": -0.6,
+    "discrimination": 1.25,
+    "grade_range": [8, 10],
+    "question": "What is the physical quantity that indicates the rate of change of displacement?",
+    "options": ["Speed", "Velocity", "Acceleration", "Distance"],
+    "answer": "Velocity"
+  },
+  {
+    "question_id": "phy_006",
+    "node_id": "velocity",
+    "difficulty": -0.2,
+    "discrimination": 1.4,
+    "grade_range": [8, 10],
+    "question": "If an object moves in a circular path with constant speed, its velocity is:",
+    "options": ["Constant", "Zero", "Changing", "Infinite"],
+    "answer": "Changing"
+  },
+  {
+    "question_id": "phy_007",
+    "node_id": "acceleration",
+    "difficulty": 0.1,
+    "discrimination": 1.35,
+    "grade_range": [8, 10],
+    "question": "A car accelerates from rest to 20 m/s in 5 seconds. What is its acceleration?",
+    "options": ["2 m/s²", "4 m/s²", "10 m/s²", "100 m/s²"],
+    "answer": "4 m/s²"
+  },
+  {
+    "question_id": "phy_008",
+    "node_id": "inertia",
+    "difficulty": -0.4,
+    "discrimination": 1.2,
+    "grade_range": [9, 10],
+    "question": "The property of a body to resist a change in its state of rest or uniform motion is called:",
+    "options": ["Force", "Momentum", "Inertia", "Energy"],
+    "answer": "Inertia"
+  },
+  {
+    "question_id": "phy_009",
+    "node_id": "newton_second_law",
+    "difficulty": 0.2,
+    "discrimination": 1.45,
+    "grade_range": [9, 11],
+    "question": "A net force of 10 N acts on a mass of 2 kg. What is the acceleration produced?",
+    "options": ["20 m/s²", "5 m/s²", "12 m/s²", "0.2 m/s²"],
+    "answer": "5 m/s²"
+  },
+  {
+    "question_id": "phy_010",
+    "node_id": "newton_third_law",
+    "difficulty": -0.3,
+    "discrimination": 1.15,
+    "grade_range": [9, 10],
+    "question": "Action and reaction forces described by Newton's Third Law act on:",
+    "options": ["The same body", "Different bodies", "The ground only", "An object at rest only"],
+    "answer": "Different bodies"
+  },
+  {
+    "question_id": "phy_011",
+    "node_id": "oscillation",
+    "difficulty": 0.5,
+    "discrimination": 1.3,
+    "grade_range": [10, 12],
+    "question": "The restoring force in a simple pendulum is provided by which component?",
+    "options": ["Tension in the string", "Component of gravity (mg sin θ)", "Air resistance", "Mass of the bob alone"],
+    "answer": "Component of gravity (mg sin θ)"
+  },
+  {
+    "question_id": "phy_012",
+    "node_id": "resonance",
+    "difficulty": 0.8,
+    "discrimination": 1.2,
+    "grade_range": [10, 12],
+    "question": "When the frequency of an external periodic force matches the natural frequency of a system, it causes:",
+    "options": ["Damping", "Resonance", "Diffraction", "Refraction"],
+    "answer": "Resonance"
+  },
+  {
+    "question_id": "phy_013",
+    "node_id": "lorentz_force",
+    "difficulty": 1.2,
+    "discrimination": 1.5,
+    "grade_range": [11, 12],
+    "question": "What is the force experienced by a charge q moving with velocity v in a magnetic field B?",
+    "options": ["q(v · B)", "q(v x B)", "q(B x v)", "q v / B"],
+    "answer": "q(v x B)"
+  },
+  {
+    "question_id": "phy_014",
+    "node_id": "thermodynamics",
+    "difficulty": 1.4,
+    "discrimination": 1.4,
+    "grade_range": [11, 12],
+    "question": "In which thermodynamic process is there no exchange of heat between the system and its surroundings?",
+    "options": ["Isothermal", "Isobaric", "Isochoric", "Adiabatic"],
+    "answer": "Adiabatic"
+  },
+  {
+    "question_id": "phy_015",
+    "node_id": "kepler_laws",
+    "difficulty": 1.0,
+    "discrimination": 1.35,
+    "grade_range": [11, 12],
+    "question": "Kepler's Second Law (equal areas in equal times) is a direct consequence of conservation of:",
+    "options": ["Linear momentum", "Angular momentum", "Energy", "Mass"],
+    "answer": "Angular momentum"
+  }
+]

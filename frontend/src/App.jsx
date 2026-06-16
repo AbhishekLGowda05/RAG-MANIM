@@ -1,29 +1,33 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ProfileProvider, useProfile } from './context/ProfileContext';
-import { SessionProvider } from './context/SessionContext';
+import { SessionProvider, useSession } from './context/SessionContext';
+import { ThemeProvider } from './context/ThemeContext';
 
 // Import Screens
-import Landing from './screens/Landing';
-import Onboarding from './screens/Onboarding';
-import Dashboard from './screens/Dashboard';
-import Workspace from './screens/Workspace';
-import Library from './screens/Library';
-import KnowledgeGraph from './screens/KnowledgeGraph';
 import Analytics from './screens/Analytics';
-import ScriptInspector from './screens/ScriptInspector';
-import Profile from './screens/Profile';
+import Dashboard from './screens/Dashboard';
 import Health from './screens/Health';
+import KnowledgeGraph from './screens/KnowledgeGraph';
+import Landing from './screens/Landing';
+import Library from './screens/Library';
+import Onboarding from './screens/Onboarding';
+import Profile from './screens/Profile';
+import ScriptInspector from './screens/ScriptInspector';
+import Workspace from './screens/Workspace';
 
 // Import Common Components
 import Sidebar from './components/Sidebar';
 
 function AppContent() {
   const { profile, loading } = useProfile();
+  const { resetProfile } = useProfile();
   
   // Navigation states
   const [showLanding, setShowLanding] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [activeScreen, setActiveScreen] = useState('dashboard');
+  const [pendingTopic, setPendingTopic] = useState(null);
+  const { startPipeline } = useSession();
 
   if (loading) {
     return (
@@ -52,9 +56,23 @@ function AppContent() {
   if (showLanding) {
     return (
       <Landing
-        onStart={() => {
+        onStart={(topic) => {
           setShowLanding(false);
-          // If learner has not been configured (no name), route them to onboarding. Otherwise, go to dashboard.
+          // If a spoken/written topic is provided, attempt to start pipeline (after onboarding if needed)
+          if (topic && topic.trim().length > 0) {
+            if (!profile.name || profile.name.trim() === '') {
+              // Save pending topic and route to onboarding first
+              setPendingTopic(topic);
+              setShowOnboarding(true);
+            } else {
+              // Start pipeline immediately and open workspace
+              startPipeline(topic);
+              setActiveScreen('workspace');
+            }
+            return;
+          }
+
+          // No topic provided — route based on profile presence
           if (!profile.name || profile.name.trim() === '') {
             setShowOnboarding(true);
           } else {
@@ -71,7 +89,14 @@ function AppContent() {
       <Onboarding
         onComplete={() => {
           setShowOnboarding(false);
-          setActiveScreen('dashboard');
+          // If onboarding completed and there is a pending topic (voice input), start the pipeline
+          if (pendingTopic) {
+            startPipeline(pendingTopic);
+            setPendingTopic(null);
+            setActiveScreen('workspace');
+          } else {
+            setActiveScreen('dashboard');
+          }
         }}
       />
     );
@@ -101,10 +126,22 @@ function AppContent() {
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      await resetProfile();
+    } catch (e) {
+      console.warn('Sign out: failed to reset profile locally', e);
+    }
+    // Route user to onboarding after signing out
+    setShowLanding(false);
+    setShowOnboarding(true);
+    setActiveScreen('dashboard');
+  };
+
   return (
     <div className="learnos-layout">
       {/* Persistent global Navigation drawer sidebar */}
-      <Sidebar activeScreen={activeScreen} setActiveScreen={setActiveScreen} />
+      <Sidebar activeScreen={activeScreen} setActiveScreen={setActiveScreen} onSignOut={handleSignOut} />
 
       {/* Primary layout content canvas viewport */}
       <div style={{ flex: 1, height: '100%', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -116,10 +153,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <ProfileProvider>
-      <SessionProvider>
-        <AppContent />
-      </SessionProvider>
-    </ProfileProvider>
+    <ThemeProvider>
+      <ProfileProvider>
+        <SessionProvider>
+          <AppContent />
+        </SessionProvider>
+      </ProfileProvider>
+    </ThemeProvider>
   );
 }

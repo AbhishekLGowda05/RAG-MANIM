@@ -38,12 +38,14 @@ def _piper_cli_available() -> bool:
     return shutil.which("piper") is not None
 
 
-def _synthesize_piper_cli(text: str, out_wav: Path) -> bool:
+def _synthesize_piper_cli(text: str, out_wav: Path, speed: float = 1.0) -> bool:
     """Synthesize using piper CLI."""
     try:
         onnx_path, _ = _ensure_piper_model()
+        # length_scale is inverse of speed
+        length_scale = 1.0 / speed
         proc = subprocess.run(
-            ["piper", "--model", str(onnx_path), "--output_file", str(out_wav)],
+            ["piper", "--model", str(onnx_path), "--length_scale", str(length_scale), "--output_file", str(out_wav)],
             input=text,
             text=True,
             capture_output=True,
@@ -102,7 +104,7 @@ def _synthesize_gtts(text: str, out_wav: Path) -> bool:
         
         if tmp_mp3.exists():
             import subprocess
-            # Convert mp3 to wav using ffmpeg (since ffmpeg is fully verified to be Available!)
+            # Convert mp3 to wav using ffmpeg
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(tmp_mp3), str(out_wav)],
                 stdout=subprocess.DEVNULL,
@@ -133,35 +135,68 @@ def _synthesize_silent(text: str, out_wav: Path) -> Path:
     return out_wav
 
 
-def synthesize(text: str, out_wav: Path) -> tuple[Path, float]:
-    """Synthesize speech to WAV and return path + duration in seconds."""
+def _apply_ffmpeg_speed(out_wav: Path, speed: float) -> None:
+    """Helper to apply speed change using FFmpeg atempo audio filter."""
+    try:
+        tmp_wav = out_wav.with_suffix(".tmp.wav")
+        # Run FFmpeg atempo filter
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(out_wav), "-filter:a", f"atempo={speed}", str(tmp_wav)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+        if tmp_wav.exists():
+            shutil.move(str(tmp_wav), str(out_wav))
+            logger.info("Successfully adjusted speech speed to %.2fx via FFmpeg", speed)
+    except Exception as exc:
+        logger.warning("Failed to adjust speed via FFmpeg: %s", exc)
+
+
+def synthesize(text: str, out_wav: Path, speed: float = 1.0) -> tuple[Path, float, bool]:
+    """
+    Synthesize speech to WAV and return path, duration, and is_silent flag.
+    If speed is not 1.0, adjusts pitch-invariant speed of voiceover.
+    """
     out_wav.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("Synthesizing audio: %s", out_wav.name)
+    logger.info("Synthesizing audio: %s (speed=%.2fx)", out_wav.name, speed)
 
     success = False
+    is_silent = False
+    
+    # 1. Synthesize
     if _piper_cli_available():
-        success = _synthesize_piper_cli(text, out_wav)
-    if not success:
+        success = _synthesize_piper_cli(text, out_wav, speed)
+        # Speed already handled by Piper length_scale
+        needs_ffmpeg_speed = False
+    else:
+        needs_ffmpeg_speed = (speed != 1.0)
         success = _synthesize_piper_python(text, out_wav)
-    if not success:
-        success = _synthesize_gtts(text, out_wav)
-    if not success:
-        logger.warning("gTTS/Piper unavailable, trying pyttsx3 fallback")
-        success = _synthesize_pyttsx3(text, out_wav)
+        if not success:
+            success = _synthesize_gtts(text, out_wav)
+        if not success:
+            logger.warning("gTTS/Piper unavailable, trying pyttsx3 fallback")
+            success = _synthesize_pyttsx3(text, out_wav)
+            
     if not success:
         _synthesize_silent(text, out_wav)
+        is_silent = True
+        # Silent audio duration can also scale with speed
+        needs_ffmpeg_speed = (speed != 1.0)
+
+    # 2. Adjust speed using FFmpeg if not handled natively
+    if success and needs_ffmpeg_speed:
+        _apply_ffmpeg_speed(out_wav, speed)
 
     duration = get_audio_duration(out_wav)
-    logger.info("Audio synthesized: %s (%.2fs)", out_wav, duration)
-    return out_wav, duration
-
+    logger.info("Audio synthesized: %s (%.2fs, is_silent=%s)", out_wav, duration, is_silent)
+    return out_wav, duration, is_silent
 
 
 def get_audio_duration(wav_path: Path) -> float:
     """Return audio duration in seconds."""
     try:
         from pydub import AudioSegment
-
         audio = AudioSegment.from_file(str(wav_path))
         return len(audio) / 1000.0
     except Exception:

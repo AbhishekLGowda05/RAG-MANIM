@@ -212,16 +212,20 @@ def build_semantic_plan(
     return plan
 
 
+import concurrent.futures
+
 def build_all_semantic_plans(
     storyboard: list[dict[str, Any]],
     learner_profile: dict[str, Any] | None = None,
     topic: str = "",
     subject: str = "Physics",
 ) -> list[dict[str, Any]]:
-    return [
-        build_semantic_plan(entry, learner_profile=learner_profile, topic=topic, subject=subject)
-        for entry in storyboard
-    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [
+            executor.submit(build_semantic_plan, entry, learner_profile, topic, subject)
+            for entry in storyboard
+        ]
+        return [f.result() for f in futures]
 
 
 # ---------------------------------------------------------------------------

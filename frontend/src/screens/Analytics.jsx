@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import MetricCard from '../components/MetricCard';
+import { useProfile } from '../context/ProfileContext';
 
 export default function Analytics() {
   const [analyticsData, setAnalyticsData] = useState({
@@ -52,10 +53,10 @@ export default function Analytics() {
   const circum = 2 * Math.PI * r;
 
   // 2. Calculations for Confidence Radar (Spider Chart)
-  // Assuming a hypothetical profile is checked, fallback values from mock
-  const physConf = 75;
-  const chemConf = 60;
-  const mathConf = 80;
+  const { profile } = useProfile() || {};
+  const physConf = profile?.confidence_map?.Physics ?? 50;
+  const chemConf = profile?.confidence_map?.Chemistry ?? 50;
+  const mathConf = profile?.confidence_map?.Mathematics ?? 50;
 
   // Scale calculations for 3-axis radar (vertices inside 100x100 box)
   // Center: (50, 50)
@@ -130,11 +131,69 @@ export default function Analytics() {
           icon="⚠️"
           color="var(--accent-rose)"
         />
+        <MetricCard
+          title="Ability (Theta)"
+          value={profile?.theta !== undefined && profile?.theta !== null ? profile.theta.toFixed(2) : '0.00'}
+          label="IRT personal estimate"
+          icon="🧠"
+          color="var(--accent-blue)"
+        />
       </div>
 
       {/* Charts Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-6)', marginBottom: 'var(--space-8)' }}>
         
+        {/* Subject Ability Ratings (theta value per subject) */}
+        <div className="learnos-card" style={{ background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column' }}>
+          <h4 className="serif-title" style={{ fontSize: '18px', fontWeight: '400', color: 'var(--text-primary)', margin: '0 0 var(--space-4) 0' }}>
+            Subject Ability Ratings (θ)
+          </h4>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 'var(--space-6)', lineHeight: '1.5' }}>
+            Your item-response estimated ability parameter (θ) calculated for each core scientific subject.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', flex: 1, justifyContent: 'center' }}>
+            {['Physics', 'Chemistry', 'Mathematics'].map(subj => {
+              const thetaVal = (() => {
+                if (profile?.subject_thetas && profile.subject_thetas[subj] !== undefined) {
+                  return parseFloat(profile.subject_thetas[subj]).toFixed(2);
+                }
+                const conf = profile?.confidence_map?.[subj];
+                if (conf !== undefined) {
+                  const mapped = -2.0 + 4.0 * (conf / 100.0);
+                  return parseFloat(mapped).toFixed(2);
+                }
+                return '0.00';
+              })();
+              
+              const percent = Math.round(((parseFloat(thetaVal) + 2.0) / 4.0) * 100);
+              
+              return (
+                <div key={subj} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>
+                      {subj === 'Physics' ? '⚡ Physics' : subj === 'Chemistry' ? '🧪 Chemistry' : '📐 Mathematics'}
+                    </span>
+                    <strong style={{ color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>
+                      θ = {thetaVal}
+                    </strong>
+                  </div>
+                  <div style={{ width: '100%', height: '6px', background: 'var(--bg-overlay)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.max(0, Math.min(100, percent))}%`,
+                        height: '100%',
+                        background: 'var(--accent-blue)',
+                        borderRadius: '3px',
+                        transition: 'width 0.8s ease'
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Radar Spider Chart (Confidence parameters) */}
         <div className="learnos-card" style={{ background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <h4 className="serif-title" style={{ fontSize: '18px', fontWeight: '400', color: 'var(--text-primary)', alignSelf: 'flex-start', margin: '0 0 var(--space-4) 0' }}>

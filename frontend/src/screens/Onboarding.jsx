@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useProfile } from '../context/ProfileContext';
 import GenerationShimmer from '../components/GenerationShimmer';
-
+import DiagnosticQuiz from '../components/DiagnosticQuiz';
 export default function Onboarding({ onComplete }) {
-  const { profile, updateProfile } = useProfile();
+  const { profile, updateProfile, reloadProfile } = useProfile();
   const [step, setStep] = useState(1);
   const [name, setName] = useState(profile.name || '');
   const [level, setLevel] = useState(profile.academic_level || 'class_11');
@@ -14,6 +14,7 @@ export default function Onboarding({ onComplete }) {
   const [generatingSummary, setGeneratingSummary] = useState(false);
 
   const academicLevels = [
+    { value: 'class_5', label: 'Class 5' },
     { value: 'class_9', label: 'Class 9' },
     { value: 'class_10', label: 'Class 10' },
     { value: 'class_11', label: 'Class 11' },
@@ -67,16 +68,7 @@ export default function Onboarding({ onComplete }) {
   };
 
   const handleNext = () => {
-    if (step === 4) {
-      setGeneratingSummary(true);
-      setStep(5);
-      // Simulate AI curriculum summary formulation
-      setTimeout(() => {
-        setGeneratingSummary(false);
-      }, 1500);
-    } else {
-      setStep(prev => prev + 1);
-    }
+    setStep(prev => prev + 1);
   };
 
   const handleBack = () => {
@@ -137,7 +129,7 @@ export default function Onboarding({ onComplete }) {
             LearnOS Intake Form
           </span>
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {[1, 2, 3, 4, 5].map(idx => (
+            {[1, 2, 3, 4, 5, 6].map(idx => (
               <div
                 key={idx}
                 style={{
@@ -337,6 +329,29 @@ export default function Onboarding({ onComplete }) {
           )}
 
           {step === 5 && (
+            <DiagnosticQuiz 
+              onComplete={async (theta) => {
+                const fresh = await reloadProfile();
+                if (fresh && fresh.confidence_map) {
+                  setConfMap(fresh.confidence_map);
+                }
+                setGeneratingSummary(true);
+                setStep(6);
+                setTimeout(() => {
+                  setGeneratingSummary(false);
+                }, 1500);
+              }} 
+              onSkip={() => {
+                setGeneratingSummary(true);
+                setStep(6);
+                setTimeout(() => {
+                  setGeneratingSummary(false);
+                }, 1500);
+              }}
+            />
+          )}
+
+          {step === 6 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               <h2 className="serif-title" style={{ fontSize: '28px', color: 'var(--text-primary)', fontWeight: '400' }}>
                 AI Curriculum Summary
@@ -407,13 +422,13 @@ export default function Onboarding({ onComplete }) {
             <button onClick={handleNext} className="btn btn-primary" style={{ minWidth: '100px' }}>
               Next Step
             </button>
-          ) : (
+          ) : step === 6 ? (
             !generatingSummary && (
               <button onClick={handleSubmit} className="btn btn-primary" style={{ minWidth: '140px', background: 'var(--accent-teal)', color: 'var(--text-inverted)' }}>
                 Start Learning →
               </button>
             )
-          )}
+          ) : null}
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function Landing({ onStart }) {
   const canvasRef = useRef(null);
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -167,8 +169,55 @@ export default function Landing({ onStart }) {
 
         {/* Action Button Strip */}
         <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', justifyContent: 'center', marginTop: 'var(--space-2)' }}>
-          <button onClick={onStart} className="btn btn-primary" style={{ fontSize: '15px', padding: '14px 28px' }}>
+          <button onClick={() => onStart && onStart()} className="btn btn-primary" style={{ fontSize: '15px', padding: '14px 28px' }}>
             Start Learning →
+          </button>
+          <button
+            onClick={async () => {
+              // Web Speech API
+              const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+              if (!SpeechRecognition) {
+                alert('Voice input is not supported in this browser.');
+                return;
+              }
+
+              const recog = new SpeechRecognition();
+              recog.lang = 'en-US';
+              recog.interimResults = false;
+              recog.maxAlternatives = 1;
+
+              recog.onstart = () => {
+                setListening(true);
+                setTranscript('');
+              };
+
+              recog.onerror = (e) => {
+                console.error('Speech recognition error', e);
+                setListening(false);
+                alert('Speech recognition error. Please try again.');
+              };
+
+              recog.onresult = (e) => {
+                const text = e.results[0][0].transcript;
+                setTranscript(text);
+                setListening(false);
+                if (onStart) onStart(text);
+              };
+
+              recog.onend = () => {
+                setListening(false);
+              };
+
+              try {
+                recog.start();
+              } catch (err) {
+                console.warn('Failed to start speech recognition', err);
+              }
+            }}
+            className="btn btn-ghost"
+            style={{ fontSize: '15px', padding: '14px 20px' }}
+          >
+            {listening ? 'Listening…' : '🎤 Speak Topic'}
           </button>
           <a href="#how-it-works" className="btn btn-ghost" style={{ fontSize: '15px', padding: '14px 28px' }}>
             See how it works

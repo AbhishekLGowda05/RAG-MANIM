@@ -118,13 +118,17 @@ export const SessionProvider = ({ children }) => {
   };
 
   const addChatMessage = async (role, content) => {
-    if (!session.session_id) return;
-
     const newMessage = { role, content, timestamp: new Date().toISOString() };
-    const updatedMessages = [...session.messages, newMessage];
+    const currentMsgs = Array.isArray(session.messages) ? session.messages : [];
+    const updatedMessages = [...currentMsgs, newMessage];
 
     const updatedSession = { ...session, messages: updatedMessages };
     setSession(updatedSession);
+
+    if (!session.session_id) {
+      console.warn("No active session ID. Message shown locally but won't be sent to AI.");
+      return;
+    }
 
     // Save chat message
     try {
@@ -141,16 +145,51 @@ export const SessionProvider = ({ children }) => {
         await incrementFollowUpCount(session.session_id);
       }
 
-      // Simple mock AI reply to build a fluid conversational chat
       if (role === 'user') {
+        try {
+          const curriculumContext = session.scene_plan?.map(s => `Scene ${s.scene_id} - ${s.title}: ${s.learning_goal}`).join('\n') || '';
+          const chatRes = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              topic: session.topic_resolved,
+              query: content,
+              curriculum_context: curriculumContext,
+              learner_profile: profile,
+              history: updatedMessages
+            })
+          });
+          
+          if (chatRes.ok) {
+            const chatData = await chatRes.json();
+            if (chatData.success && chatData.reply) {
+              const aiMessage = {
+                role: 'assistant',
+                content: chatData.reply,
+                timestamp: new Date().toISOString()
+              };
+              
+              setSession(prev => {
+                const withAI = { ...prev, messages: [...prev.messages, aiMessage] };
+                fetch('/api/persist', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ filename: 'session.json', payload: withAI })
+                });
+                return withAI;
+              });
+              return;
+            }
+          }
+        } catch (chatErr) {
+          console.error('Failed to get real RAG chat response:', chatErr);
+        }
+
+        // Fallback
         setTimeout(async () => {
           const aiMessage = {
             role: 'assistant',
-            content: `Based on **${session.topic_resolved}**, here is an insightful clarification:
-
-I understand you're asking about "${content}". In relation to this textbook topic, the primary mechanism rests on how system values balance. The Manim visual showing at **0:15** in the video demonstrates this exact displacement.
-
-Do you want me to derive the mathematical equality or show another visual analogy?`,
+            content: `I'm here to clarify: standard educational principles apply for "${content}". Can I help you with another concept or visual analogy?`,
             timestamp: new Date().toISOString()
           };
 

@@ -138,8 +138,25 @@ export const ProfileProvider = ({ children }) => {
     }
   };
 
+  const reloadProfile = async () => {
+    try {
+      const response = await fetch('/api/load/profile.json');
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.learner_id) {
+          setProfile(data);
+          localStorage.setItem('learnos_profile', JSON.stringify(data));
+          return data;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to reload profile:', err);
+    }
+    return null;
+  };
+
   return (
-    <ProfileContext.Provider value={{ profile, updateProfile, resetProfile, loading }}>
+    <ProfileContext.Provider value={{ profile, updateProfile, resetProfile, reloadProfile, loading }}>
       {children}
     </ProfileContext.Provider>
   );

@@ -17,11 +17,7 @@ from typing import Any
 
 from modules.config import NVIDIA_PLANNER_MODEL, PATHS, get_logger
 from modules.llm.nvidia_client import NvidiaClient
-from modules.planning.profile_context import (
-    format_learner_context,
-    normalize_profile,
-    pace_word_budget,
-)
+from modules.planning.profile_context import format_learner_context
 
 logger = get_logger(__name__)
 
@@ -81,8 +77,21 @@ def write_narration(
             seen.add(p.lower())
             unique_phrases.append(p)
 
-    p_norm = normalize_profile(learner_profile, subject)
-    word_lo, word_hi = pace_word_budget(p_norm)
+    # Fallback if profile normalization/pacing helpers are absent.
+    # Determine TTS speed from provided learner profile (if present).
+    tts_speed = 1.0
+    if learner_profile and isinstance(learner_profile, dict):
+        ped = learner_profile.get("pedagogical_profile") or {}
+        try:
+            tts_speed = float(ped.get("tts_speed", 1.0))
+        except Exception:
+            tts_speed = 1.0
+
+    # Base target word counts; faster TTS -> fewer words per scene.
+    base_lo, base_hi = 35, 60
+    word_lo = max(15, int(base_lo / tts_speed))
+    word_hi = max(word_lo + 10, int(base_hi / tts_speed))
+
     learner_context = plan.get("_learner_context") or format_learner_context(
         learner_profile, topic or title, subject
     )
@@ -144,6 +153,8 @@ def write_narration(
     return narration
 
 
+import concurrent.futures
+
 def write_all_narrations(
     plans: list[dict[str, Any]],
     learner_profile: dict[str, Any] | None = None,
@@ -151,7 +162,7 @@ def write_all_narrations(
     subject: str = "Physics",
 ) -> list[dict[str, Any]]:
     """Write narrations for all plans and attach them in-place."""
-    for plan in plans:
+    def process_plan(plan):
         narration = write_narration(
             plan, learner_profile=learner_profile, topic=topic, subject=subject
         )
@@ -160,9 +171,13 @@ def write_all_narrations(
             "Narration for scene %d (%d words): %s…",
             plan["scene_id"],
             len(narration.split()),
-            narration[:60],
+            narration[:50],
         )
-    return plans
+        return plan
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(process_plan, plan) for plan in plans]
+        return [f.result() for f in futures]
 
 
 def _find_missing(narration: str, phrases: list[str]) -> list[str]:

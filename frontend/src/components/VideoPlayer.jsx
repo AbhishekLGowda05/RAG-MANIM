@@ -48,7 +48,6 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
     const handlePause = () => setIsPlaying(false);
     const handleTime = () => {
       setCurrentTime(video.currentTime);
-      if (onTimeUpdate) onTimeUpdate(video.currentTime);
     };
     const handleDuration = () => setDuration(video.duration);
 
@@ -80,12 +79,7 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
 
       setCurrentTime((prev) => {
         const next = prev + delta * speed;
-        if (next >= duration) {
-          setIsPlaying(false);
-          return 0; // Wrap/Stop
-        }
-        if (onTimeUpdate) onTimeUpdate(next);
-        return next;
+        return next >= duration ? duration : next;
       });
 
       animId = requestAnimationFrame(tick);
@@ -93,7 +87,22 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, speed, duration, videoUrl, videoError, onTimeUpdate]);
+  }, [isPlaying, speed, duration, videoUrl, videoError]);
+
+  // Handle mock playback reaching the end
+  useEffect(() => {
+    if (isMock && isPlaying && currentTime >= duration && duration > 0) {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    }
+  }, [currentTime, duration, isMock, isPlaying]);
+
+  // Safely trigger onTimeUpdate only when currentTime changes
+  useEffect(() => {
+    if (onTimeUpdate && !isNaN(currentTime)) {
+      onTimeUpdate(currentTime);
+    }
+  }, [currentTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Draw fallbacks vectors loop
   useEffect(() => {
@@ -121,7 +130,6 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
     
     if (isMock) {
       setCurrentTime(time);
-      if (onTimeUpdate) onTimeUpdate(time);
     } else {
       if (!videoRef.current) return;
       videoRef.current.currentTime = time;
@@ -513,7 +521,7 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
             type="range"
             min="0"
             max="100"
-            value={duration ? (currentTime / duration) * 100 : 0}
+            value={duration && !isNaN(duration) && !isNaN(currentTime) ? (currentTime / duration) * 100 : 0}
             onChange={handleScrub}
             style={{
               width: '100%',
@@ -537,7 +545,6 @@ export default function VideoPlayer({ videoUrl, scenePlan, onTimeUpdate }) {
               onClick={() => {
                 if (isMock) {
                   setCurrentTime(t.startTime);
-                  if (onTimeUpdate) onTimeUpdate(t.startTime);
                 } else if (videoRef.current) {
                   videoRef.current.currentTime = t.startTime;
                 }

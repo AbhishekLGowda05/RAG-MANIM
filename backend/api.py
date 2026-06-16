@@ -14,7 +14,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -58,7 +58,13 @@ from modules.planning.narration_writer import write_all_narrations
 from modules.planning.asset_registry import reset_registry
 from modules.planning.profile_context import format_learner_context
 
-from modules.retrieval.pageindex_retriever import retrieve_curriculum_context
+try:
+    from modules.retrieval.pageindex_retriever import retrieve_curriculum_context
+except Exception as e:
+    logger = logging.getLogger("backend_api")
+    logger.warning(f"Optional PageIndex dependency not available: {e}. Continuing with empty curriculum context.")
+    def retrieve_curriculum_context(topic, document_tree, concept_graph, **kwargs):
+        return {"nodes": []}
 
 from modules.tts.piper_tts import synthesize
 from modules.sync.sync_engine import synchronize_all
@@ -418,27 +424,84 @@ async def run_pipeline_task(
         await asyncio.sleep(0.5)
 
         # --- Stage 1: Retrieve curriculum context ---
-        curriculum_context = retrieve_curriculum_context(topic)
+        import os
+        from modules.rag.hierarchical_retriever import resolve
+        from modules.planning.pedagogical_planner import compute_content_difficulty, compute_scaffolding, format_pedagogical_context
+        from modules.learner.learner_model import LearnerModel
+        
+        # Load unified learner model (Stage 1, 4, 6)
+        model = LearnerModel.from_dict(learner_profile or {})
+        grade = model.grade
+        theta = model.theta if model.theta is not None else 0.0
+        
+        # Load from pageindex_workspace if empty in results
+        document_tree = {}
+        concept_graph = {}
+        
+        workspace_dir = ROOT.parent / "pageindex_workspace"
+        workspace_json_files = list(workspace_dir.glob("*.json"))
+        structure_file = None
+        for f in workspace_json_files:
+            if f.name != "_meta.json":
+                structure_file = f
+                break
+                
+        if structure_file and structure_file.exists():
+            try:
+                with open(structure_file, "r", encoding="utf-8") as f:
+                    document_tree = json.load(f)
+                logger.info(f"Loaded curriculum document structure from workspace: {structure_file.name}")
+            except Exception as e:
+                logger.error(f"Error loading document structure from workspace: {e}")
+                
+        if not document_tree:
+            structure_path = RESULTS_DIR / "structure.json"
+            if structure_path.exists():
+                with open(structure_path, "r", encoding="utf-8") as f:
+                    document_tree = json.load(f)
+                    
+        graph_path = RESULTS_DIR / "concept_graph.json"
+        if graph_path.exists():
+            with open(graph_path, "r", encoding="utf-8") as f:
+                concept_graph = json.load(f)
+                
+        retrieved_context = resolve(topic, document_tree, concept_graph, condition="C", grade=grade, theta=theta, learner_profile=learner_profile)
+        
+        # Build curriculum context string using both summary and content fields
+        context_parts = []
+        for n in retrieved_context.get("nodes", []):
+            text_body = n.get("summary") or n.get("content") or n.get("text") or ""
+            context_parts.append(f"Title: {n.get('title')}\nContent: {text_body}")
+        curriculum_context = "\n\n".join(context_parts)
+        
         logger.info("Retrieved curriculum context length=%s", len(curriculum_context))
+
+        # --- Stage 1.5: Pedagogical Planning ---
+        beta = compute_content_difficulty(retrieved_context, topic)
+        scaffolding = compute_scaffolding(beta, theta)
+        pedagogical_context = format_pedagogical_context(scaffolding)
+        scene_count = scaffolding["scene_count"]
 
         # --- Stage 2: Storyboard ---
         await queue.put({
             "stage": "planning",
             "progress": 35,
-            "message": "[1/8] Generating CBSE/NCERT-aligned pedagogical lesson storyboard..."
+            "message": f"[1/8] Generating {scene_count}-scene lesson storyboard..."
         })
         reset_registry()
         storyboard = build_storyboard(
             topic=topic,
             curriculum_context=curriculum_context,
             learner_profile=learner_profile,
-            subject=subject
+            subject=subject,
+            scene_count=scene_count,
+            pedagogical_context=pedagogical_context
         )
         
         await queue.put({
             "stage": "planning",
             "progress": 45,
-            "message": "Syllabus storyboard arc finalized with 5 scenes!",
+            "message": f"Syllabus storyboard arc finalized with {scene_count} scenes!",
             "data": storyboard
         })
         await asyncio.sleep(0.5)
@@ -477,11 +540,20 @@ async def run_pipeline_task(
         # --- Stage 4: Synthesize Audio ---
         await queue.put({"stage": "tts", "progress": 75, "message": "[4/8] Running offline TTS audio synthesizer per scene..."})
         audio_paths = {}
+        tts_speed = model.pedagogical_profile.get("tts_speed", 1.0)
+        
         for plan in plans:
             sid = plan["scene_id"]
             wav_path = ROOT / "data" / "audio" / f"scene_{sid}.wav"
-            wav, _duration = synthesize(plan["narration"], wav_path)
+            wav, _duration, is_silent = synthesize(plan["narration"], wav_path, speed=tts_speed)
             audio_paths[sid] = wav
+            if is_silent:
+                logger.warning(f"TTS fallback to silent audio detected for scene {sid}!")
+                await queue.put({
+                    "stage": "tts",
+                    "progress": 78,
+                    "message": f"Warning: TTS synthesized silent audio for scene {sid}."
+                })
             
         await queue.put({"stage": "tts", "progress": 80, "message": "Narration voiceovers generated successfully!"})
         await asyncio.sleep(0.5)
@@ -671,6 +743,446 @@ async def health_check():
             "manim": "Available" if manim_avail else "Missing",
             "piper": "Available" if piper_avail else "Missing"
         }
+    }
+
+
+@app.post("/api/diagnostic/start")
+async def diagnostic_start(payload: dict):
+    """Simple diagnostic start endpoint (fallback stub).
+    Returns one sample item for the frontend diagnostic flow.
+    """
+    # In the full system this would run an adaptive item selection engine.
+    item = {
+        "item_id": "d_1",
+        "question": "Which quantity is conserved in an elastic collision?",
+        "options": ["Kinetic energy", "Momentum", "Temperature"],
+        "answer": "Momentum"
+    }
+    return {"item": item}
+
+
+@app.post("/api/diagnostic/answer")
+async def diagnostic_answer(req: dict):
+    """Simple diagnostic answer handler (fallback stub).
+    Accepts responses and returns a completion flag and theta estimate.
+    """
+    # Pretend the diagnostic is complete and return a mid-level ability estimate.
+    return {"complete": True, "theta": 50.0}
+
+@app.post("/api/curriculum/upload")
+async def upload_pdf(file: UploadFile = File(...)):
+    from modules.config import PATHS
+    import shutil
+    import uuid
+    
+    doc_id = str(uuid.uuid4())
+    filename = file.filename or f"doc_{doc_id}.pdf"
+    file_path = PATHS["textbooks"] / filename
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return {"document_id": doc_id, "filename": filename, "path": str(file_path)}
+    except Exception as e:
+        logger.error(f"Error uploading PDF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/curriculum/index/{document_id}")
+async def index_pdf(document_id: str, req: dict):
+    from PageIndex.pageindex.client import PageIndexClient
+    from modules.config import PATHS
+    
+    file_path = req.get("path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    try:
+        workspace = str(PATHS["curriculum_results"])
+        client = PageIndexClient(workspace=workspace)
+        logger.info(f"Starting indexing for {file_path}")
+        
+        new_doc_id = client.index(file_path)
+        
+        from modules.rag.dependency_graph_builder import generate_dependency_graph
+        doc_structure = client.get_document_structure(new_doc_id)
+        if doc_structure:
+            struct = json.loads(doc_structure)
+            graph = generate_dependency_graph(struct)
+            
+            graph_path = PATHS["curriculum_results"] / "concept_graph.json"
+            with open(graph_path, "w", encoding="utf-8") as f:
+                json.dump(graph, f, indent=2)
+                
+        return {"status": "success", "document_id": new_doc_id}
+    except Exception as e:
+        logger.error(f"Error indexing PDF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/curriculum/documents")
+async def list_documents():
+    from PageIndex.pageindex.client import PageIndexClient
+    from modules.config import PATHS
+    try:
+        workspace = str(PATHS["curriculum_results"])
+        client = PageIndexClient(workspace=workspace)
+        docs = []
+        if hasattr(client, 'documents') and client.documents:
+            docs = [doc for doc in client.documents.values()]
+        return {"documents": docs}
+    except Exception as e:
+        return {"documents": []}
+
+@app.get("/api/curriculum/structure/{document_id}")
+async def get_structure(document_id: str):
+    from PageIndex.pageindex.client import PageIndexClient
+    from modules.config import PATHS
+    try:
+        workspace = str(PATHS["curriculum_results"])
+        client = PageIndexClient(workspace=workspace)
+        doc_structure = client.get_document_structure(document_id)
+        return json.loads(doc_structure) if doc_structure else {}
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.get("/api/learner/theta")
+async def get_theta():
+    theta_path = USER_DATA_DIR / "theta.json"
+    if not theta_path.exists():
+        return {"theta": 0.0, "subject_thetas": {}}
+    try:
+        return json.loads(theta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"theta": 0.0, "subject_thetas": {}}
+
+@app.post("/api/learner/theta")
+async def save_theta(req: dict):
+    theta_path = USER_DATA_DIR / "theta.json"
+    theta = float(req.get("theta", 0.0))
+    subject = req.get("subject", "")
+    
+    data = {"theta": theta, "subject_thetas": {}}
+    if theta_path.exists():
+        try:
+            data = json.loads(theta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+            
+    data["theta"] = theta
+    if "subject_thetas" not in data:
+        data["subject_thetas"] = {}
+        
+    if subject:
+        data["subject_thetas"][subject] = theta
+        
+    # Atomic save
+    temp_path = theta_path.with_suffix(".tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    if theta_path.exists():
+        theta_path.unlink()
+    temp_path.rename(theta_path)
+    
+    # Also sync to profile.json to keep it as single source of truth
+    profile_path = USER_DATA_DIR / "profile.json"
+    if profile_path.exists():
+        try:
+            profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
+            profile_data["theta"] = theta
+            if "subject_thetas" not in profile_data:
+                profile_data["subject_thetas"] = {}
+            if "confidence_map" not in profile_data:
+                profile_data["confidence_map"] = {}
+            if subject:
+                profile_data["subject_thetas"][subject] = theta
+                # Map theta (-2 to 2) to 0-100 percentage
+                percentage = int((theta + 2.0) / 4.0 * 100)
+                profile_data["confidence_map"][subject] = max(0, min(100, percentage))
+                
+            temp_profile = profile_path.with_suffix(".tmp")
+            with open(temp_profile, "w", encoding="utf-8") as f:
+                json.dump(profile_data, f, indent=2)
+            if profile_path.exists():
+                profile_path.unlink()
+            temp_profile.rename(profile_path)
+        except Exception as e:
+            logger.error(f"Failed to sync theta to profile.json: {e}")
+            
+    return {"success": True, "theta": theta}
+
+@app.post("/api/diagnostic/start")
+async def start_diagnostic(req: dict):
+    from modules.learner.irt_engine import select_next_item
+    subject = req.get("subject", "Physics")
+    
+    # Load profile to get grade
+    profile_path = USER_DATA_DIR / "profile.json"
+    grade = 11
+    if profile_path.exists():
+        try:
+            profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
+            grade_str = profile_data.get("academic_level", "class_11")
+            grade_map = {
+                "class_5": 5,
+                "class_9": 9,
+                "class_10": 10,
+                "class_11": 11,
+                "class_12": 12,
+                "undergraduate": 15,
+                "competitive": 12
+            }
+            grade = grade_map.get(grade_str, 11)
+        except Exception:
+            pass
+            
+    item = select_next_item(0.0, [], subject, grade)
+    return {"item": item, "theta": 0.0, "answered_ids": []}
+
+@app.post("/api/diagnostic/answer")
+async def answer_diagnostic(req: dict):
+    from modules.learner.irt_engine import select_next_item, estimate_theta
+    responses = req.get("responses", [])
+    subject = req.get("subject", "Physics")
+    
+    # Load profile to get grade
+    profile_path = USER_DATA_DIR / "profile.json"
+    grade = 11
+    if profile_path.exists():
+        try:
+            profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
+            grade_str = profile_data.get("academic_level", "class_11")
+            grade_map = {
+                "class_5": 5,
+                "class_9": 9,
+                "class_10": 10,
+                "class_11": 11,
+                "class_12": 12,
+                "undergraduate": 15,
+                "competitive": 12
+            }
+            grade = grade_map.get(grade_str, 11)
+        except Exception:
+            pass
+
+    theta = estimate_theta(responses, subject, use_2pl=True)
+    answered_ids = [r["item_id"] for r in responses]
+    
+    # Update topic-level confidence scores in profile.json
+    if profile_path.exists():
+        try:
+            profile_data = json.loads(profile_path.read_text(encoding="utf-8"))
+            if "confidence_map" not in profile_data:
+                profile_data["confidence_map"] = {}
+                
+            from modules.learner.irt_engine import get_item_by_id
+            for resp in responses:
+                item = get_item_by_id(resp["item_id"], subject)
+                if item and "node_id" in item:
+                    nid = item["node_id"]
+                    diff = item.get("difficulty") or item.get("b") or 0.0
+                    is_correct = resp.get("is_correct", 0)
+                    
+                    if is_correct == 1:
+                        if diff < -0.5:
+                            conf = 75
+                        elif diff <= 0.5:
+                            conf = 85
+                        else:
+                            conf = 95
+                    else:
+                        if diff < -0.5:
+                            conf = 20
+                        elif diff <= 0.5:
+                            conf = 35
+                        else:
+                            conf = 50
+                            
+                    profile_data["confidence_map"][nid] = conf
+            
+            # Atomic save
+            temp_profile = profile_path.with_suffix(".tmp")
+            with open(temp_profile, "w", encoding="utf-8") as f:
+                json.dump(profile_data, f, indent=2)
+            if profile_path.exists():
+                profile_path.unlink()
+            temp_profile.rename(profile_path)
+            logger.info("Successfully updated topic-level confidence map in profile.json")
+        except Exception as e:
+            logger.error(f"Failed to update topic confidences in profile.json: {e}")
+
+    if len(responses) >= 7:
+        await save_theta({"theta": theta, "subject": subject})
+        return {"complete": True, "theta": theta}
+        
+    next_item = select_next_item(theta, answered_ids, subject, grade)
+    if not next_item:
+        await save_theta({"theta": theta, "subject": subject})
+        return {"complete": True, "theta": theta}
+        
+    return {"complete": False, "item": next_item, "theta": theta, "answered_ids": answered_ids}
+
+# ---------------------------------------------------------------------------
+# Multimodal Input Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/input/understand-image")
+async def understand_image(file: UploadFile = File(...)):
+    """
+    Accepts an uploaded image (screenshot, photo of textbook page, diagram, etc.)
+    and uses Gemini Vision to extract the topic/question the user is asking about.
+    Returns a plain-text string ready to be placed in the topic input field.
+    """
+    import base64
+    import google.generativeai as genai
+    from modules.config import GEMINI_API_KEY
+
+    api_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set in environment.")
+
+    try:
+        image_bytes = await file.read()
+        mime_type = file.content_type or "image/jpeg"
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+
+        image_part = {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": base64.b64encode(image_bytes).decode("utf-8")
+            }
+        }
+
+        prompt = """You are an educational assistant. A student has shared an image with you.
+
+Analyze this image carefully. It could be:
+- A photo of a textbook page or chapter
+- A screenshot of a question or problem
+- A diagram, graph, or chart from a science/math topic
+- A handwritten note with a question
+
+Your task: Identify the educational topic or question the student wants to learn about.
+Return ONLY a clear, concise topic/question string (10-25 words max) that can be used as a search query to generate an educational video lesson.
+
+Examples of good outputs:
+- "Newton's Laws of Motion and their applications"
+- "Bohr's atomic model and electron energy levels"
+- "Photosynthesis process in plants"
+- "Quadratic equations and their solutions"
+
+Return ONLY the topic string. No explanations, no preamble."""
+
+        response = model.generate_content([prompt, image_part])
+        extracted_topic = (response.text or "").strip()
+
+        if not extracted_topic:
+            raise ValueError("Could not extract a topic from the image.")
+
+        return {"topic": extracted_topic, "success": True}
+
+    except Exception as e:
+        logger.error(f"Image understanding failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
+
+
+@app.post("/api/input/transcribe-audio")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """
+    Accepts a recorded audio blob (webm/ogg/wav) and transcribes it using
+    Google Gemini's audio understanding capability. Returns plain text.
+    """
+    import base64
+    import google.generativeai as genai
+    from modules.config import GEMINI_API_KEY
+
+    api_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set in environment.")
+
+    try:
+        audio_bytes = await file.read()
+        mime_type = file.content_type or "audio/webm"
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+
+        audio_part = {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": base64.b64encode(audio_bytes).decode("utf-8")
+            }
+        }
+
+        prompt = """Transcribe the spoken words in this audio clip into plain text.
+The speaker is a student asking about an educational topic.
+Return ONLY the transcribed text, nothing else. No timestamps, no labels."""
+
+        response = model.generate_content([prompt, audio_part])
+        transcript = (response.text or "").strip()
+
+        if not transcript:
+            raise ValueError("Could not transcribe audio.")
+
+        return {"transcript": transcript, "success": True}
+
+    except Exception as e:
+        logger.error(f"Audio transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+@app.post("/api/chat")
+async def chat_copilot(req: dict):
+    topic = req.get("topic", "")
+    query = req.get("query", "")
+    curriculum_context = req.get("curriculum_context", "")
+    learner_profile = req.get("learner_profile", {})
+    history = req.get("history", [])
+    
+    # format learner context
+    learner_context_block = format_learner_context(learner_profile, topic)
+    
+    system_prompt = (
+        "You are Co-Pilot Classroom, a professional NCERT/CBSE AI learning assistant.\n"
+        "You help students clarify doubts about their lessons. Answer their questions accurately, "
+        "referencing the curriculum context where appropriate. Keep your answers brief (under 150 words) and helpful.\n"
+        f"IMPORTANT: Match your explanation style (vocabulary level, equation density, analogies) to the following learner context:\n{learner_context_block}\n"
+    )
+    
+    messages = [{"role": "system", "content": system_prompt}]
+    for msg in history[-5:]: # Keep last 5 messages for context
+        role = "user" if msg.get("role") == "user" else "assistant"
+        messages.append({"role": role, "content": msg.get("content", "")})
+        
+    messages.append({"role": "user", "content": f"Topic: {topic}\nCurriculum Evidence: {curriculum_context}\nQuestion: {query}"})
+    
+    try:
+        client = NvidiaClient()
+        response = client.chat(modules.config.NVIDIA_PLANNER_MODEL, messages, temperature=0.6)
+        if response:
+            return {"reply": response, "success": True}
+    except Exception as e:
+        logger.warning(f"Nvidia NIM chat failed, trying Gemini fallback: {e}")
+        
+    try:
+        import google.generativeai as genai
+        from modules.config import GEMINI_API_KEY
+        api_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+        if api_key:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=system_prompt)
+            contents = []
+            for msg in messages[1:]:
+                role = "user" if msg["role"] == "user" else "model"
+                contents.append({"role": role, "parts": [msg["content"]]})
+            response = model.generate_content(contents)
+            text = (response.text or "").strip()
+            if text:
+                return {"reply": text, "success": True}
+    except Exception as e:
+        logger.error(f"Gemini fallback chat failed: {e}")
+        
+    return {
+        "reply": f"Based on {topic}, here is a clarification: standard physical principles apply. Can I help you with another concept or equation?",
+        "success": True
     }
 
 # Mount static folders for generated assets

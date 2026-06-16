@@ -1,0 +1,152 @@
+[
+  {
+    "question_id": "chm_001",
+    "node_id": "states_of_matter",
+    "difficulty": -1.5,
+    "discrimination": 1.1,
+    "grade_range": [5, 8],
+    "question": "Which state of matter has a definite volume but no definite shape?",
+    "options": ["Solid", "Liquid", "Gas", "Plasma"],
+    "answer": "Liquid"
+  },
+  {
+    "question_id": "chm_002",
+    "node_id": "solubility",
+    "difficulty": -1.2,
+    "discrimination": 1.2,
+    "grade_range": [5, 8],
+    "question": "Which of the following will dissolve fastest in a glass of warm water?",
+    "options": ["Sand", "Powdered sugar", "Sugar cubes", "Oil"],
+    "answer": "Powdered sugar"
+  },
+  {
+    "question_id": "chm_003",
+    "node_id": "chemical_change",
+    "difficulty": -1.0,
+    "discrimination": 1.15,
+    "grade_range": [5, 8],
+    "question": "Which of the following is an example of a chemical change?",
+    "options": ["Melting ice", "Breaking a glass", "Rusting of iron", "Mixing sand and water"],
+    "answer": "Rusting of iron"
+  },
+  {
+    "question_id": "chm_004",
+    "node_id": "acids_bases",
+    "difficulty": -0.8,
+    "discrimination": 1.25,
+    "grade_range": [5, 8],
+    "question": "Which of these substances is acidic in nature?",
+    "options": ["Lemon juice", "Soap solution", "Baking soda", "Pure water"],
+    "answer": "Lemon juice"
+  },
+  {
+    "question_id": "chm_005",
+    "node_id": "atoms_molecules",
+    "difficulty": -0.5,
+    "discrimination": 1.3,
+    "grade_range": [8, 10],
+    "question": "The smallest unit of an element that retains all chemical properties of that element is a(n):",
+    "options": ["Molecule", "Atom", "Compound", "Mixture"],
+    "answer": "Atom"
+  },
+  {
+    "question_id": "chm_006",
+    "node_id": "atomic_structure",
+    "difficulty": -0.2,
+    "discrimination": 1.35,
+    "grade_range": [8, 10],
+    "question": "The nucleus of an atom consists of which subatomic particles?",
+    "options": ["Electrons and protons", "Protons and neutrons", "Electrons and neutrons", "Protons only"],
+    "answer": "Protons and neutrons"
+  },
+  {
+    "question_id": "chm_007",
+    "node_id": "isotopes",
+    "difficulty": 0.2,
+    "discrimination": 1.4,
+    "grade_range": [9, 10],
+    "question": "Isotopes of an element have the same number of protons but different numbers of:",
+    "options": ["Electrons", "Neutrons", "Positrons", "Protons"],
+    "answer": "Neutrons"
+  },
+  {
+    "question_id": "chm_008",
+    "node_id": "chemical_bonding",
+    "difficulty": 0.4,
+    "discrimination": 1.45,
+    "grade_range": [9, 11],
+    "question": "The bond formed by the sharing of electron pairs between two atoms is called a(n):",
+    "options": ["Ionic bond", "Covalent bond", "Metallic bond", "Hydrogen bond"],
+    "answer": "Covalent bond"
+  },
+  {
+    "question_id": "chm_009",
+    "node_id": "periodic_table",
+    "difficulty": 0.0,
+    "discrimination": 1.25,
+    "grade_range": [9, 10],
+    "question": "Elements in the same group of the periodic table have the same number of:",
+    "options": ["Protons", "Valence electrons", "Neutrons", "Electron shells"],
+    "answer": "Valence electrons"
+  },
+  {
+    "question_id": "chm_010",
+    "node_id": "valency",
+    "difficulty": -0.1,
+    "discrimination": 1.3,
+    "grade_range": [9, 10],
+    "question": "What is the valency of Oxygen, which has atomic number 8?",
+    "options": ["2", "6", "8", "4"],
+    "answer": "2"
+  },
+  {
+    "question_id": "chm_011",
+    "node_id": "redox_reactions",
+    "difficulty": 0.6,
+    "discrimination": 1.35,
+    "grade_range": [10, 12],
+    "question": "In a redox reaction, oxidation is defined as the:",
+    "options": ["Gain of electrons", "Loss of electrons", "Gain of protons", "Loss of neutrons"],
+    "answer": "Loss of electrons"
+  },
+  {
+    "question_id": "chm_012",
+    "node_id": "mole_concept",
+    "difficulty": 0.8,
+    "discrimination": 1.4,
+    "grade_range": [10, 12],
+    "question": "How many particles are present in one mole of any substance?",
+    "options": ["6.022 x 10²²", "6.022 x 10²³", "3.011 x 10²³", "1.6 x 10⁻¹⁹"],
+    "answer": "6.022 x 10²³"
+  },
+  {
+    "question_id": "chm_013",
+    "node_id": "chemical_equilibrium",
+    "difficulty": 1.1,
+    "discrimination": 1.45,
+    "grade_range": [11, 12],
+    "question": "According to Le Chatelier's principle, if pressure is increased in a gaseous equilibrium system, the reaction shifts:",
+    "options": ["Toward more moles of gas", "Toward fewer moles of gas", "It does not shift", "In the endothermic direction"],
+    "answer": "Toward fewer moles of gas"
+  },
+  {
+    "question_id": "chm_014",
+    "node_id": "organic_nomenclature",
+    "difficulty": 1.3,
+    "discrimination": 1.3,
+    "grade_range": [11, 12],
+    "question": "What is the IUPAC name of the simplest aldehyde compound (HCHO)?",
+    "options": ["Methanal", "Ethanal", "Formaldehyde", "Methanol"],
+    "answer": "Methanal"
+  },
+  {
+    "question_id": "chm_015",
+    "node_id": "electrochemical_series",
+    "difficulty": 1.5,
+    "discrimination": 1.5,
+    "grade_range": [11, 12],
+    "question": "Which of the following metals has the highest standard reduction potential and is least reactive?",
+    "options": ["Sodium (Na)", "Zinc (Zn)", "Copper (Cu)", "Gold (Au)"],
+    "answer": "Gold (Au)"
+  }
+]

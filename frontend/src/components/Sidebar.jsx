@@ -1,8 +1,9 @@
-import React from 'react';
 import { useProfile } from '../context/ProfileContext';
+import { useTheme } from '../context/ThemeContext';
 
-export default function Sidebar({ activeScreen, setActiveScreen }) {
+export default function Sidebar({ activeScreen, setActiveScreen, onSignOut }) {
   const { profile } = useProfile();
+  const { theme, toggleTheme } = useTheme();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '⚡' },
@@ -102,8 +103,45 @@ export default function Sidebar({ activeScreen, setActiveScreen }) {
         })}
       </div>
 
-      {/* Footer info branding */}
-      <div style={{ padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--border-subtle)', textAlign: 'center' }}>
+      {/* Footer actions and branding */}
+      <div style={{ padding: 'var(--space-4) var(--space-6)', borderTop: '1px solid var(--border-subtle)', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <button
+          onClick={toggleTheme}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--bg-raised)',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s'
+          }}
+        >
+          {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
+        </button>
+        <button
+          onClick={() => {
+            if (onSignOut) onSignOut();
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: '13px'
+          }}
+        >
+          Sign out
+        </button>
         <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em' }}>
           LearnOS v1.0
         </span>

@@ -36,10 +36,46 @@
   /* Radius */
   --r-sm: 6px;   --r-md: 10px;   --r-lg: 16px;   --r-xl: 24px;
 
+  /* Shadows */
+  --shadow-card: none;
+  --shadow-hover: none;
+
   /* Typography */
   --font-display: 'DM Serif Display', Georgia, serif;
   --font-ui:      'Outfit', system-ui, sans-serif;
   --font-mono:    'DM Mono', 'Courier New', monospace;
+}
+
+[data-theme='light'] {
+  /* Backgrounds */
+  --bg-base:       #f0f2f5;   /* softer page background with depth */
+  --bg-surface:    #ffffff;   /* crisp white for cards, sidebar */
+  --bg-raised:     #e4e7eb;   /* distinct hover/input background */
+  --bg-overlay:    #ffffff;   /* dropdown, modal */
+
+  /* Text */
+  --text-primary:  #0f172a;   /* strong slate for headlines */
+  --text-secondary:#475569;   /* medium slate for body copy */
+  --text-muted:    #94a3b8;   /* light slate for placeholders */
+  --text-inverted: #ffffff;   /* text on dark bg */
+
+  /* Brand / Accent - tailored for light mode readability */
+  --accent-amber:  #d97706;   /* slightly deeper amber for contrast */
+  --accent-amber-dim: #fef3c7;
+  --accent-blue:   #2563eb;   /* stronger blue */
+  --accent-blue-dim: #dbeafe; 
+  --accent-teal:   #0d9488;
+  --accent-rose:   #e11d48;
+  --accent-violet: #7c3aed;
+
+  /* Borders */
+  --border-subtle: rgba(15, 23, 42, 0.08); /* slightly tinted subtle borders */
+  --border-default:rgba(15, 23, 42, 0.15);
+  --border-strong: rgba(15, 23, 42, 0.25);
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
 }
 
 *, *::before, *::after {
@@ -135,9 +171,11 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--r-lg);
   padding: var(--space-6);
   transition: all 0.2s ease-in-out;
+  box-shadow: var(--shadow-card);
 }
 .learnos-card:hover {
   border-color: var(--border-default);
+  box-shadow: var(--shadow-hover);
 }
 .learnos-card.interactive:hover {
   transform: translateY(-2px);

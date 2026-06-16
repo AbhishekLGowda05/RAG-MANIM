@@ -1,0 +1,152 @@
+[
+  {
+    "question_id": "mat_001",
+    "node_id": "fractions",
+    "difficulty": -1.5,
+    "discrimination": 1.1,
+    "grade_range": [5, 8],
+    "question": "What is the value of 1/2 + 1/4?",
+    "options": ["2/6", "3/4", "1/6", "2/4"],
+    "answer": "3/4"
+  },
+  {
+    "question_id": "mat_002",
+    "node_id": "shapes",
+    "difficulty": -1.3,
+    "discrimination": 1.15,
+    "grade_range": [5, 8],
+    "question": "A polygon with five sides is called a:",
+    "options": ["Hexagon", "Pentagon", "Octagon", "Quadrilateral"],
+    "answer": "Pentagon"
+  },
+  {
+    "question_id": "mat_003",
+    "node_id": "perimeter",
+    "difficulty": -1.0,
+    "discrimination": 1.2,
+    "grade_range": [5, 8],
+    "question": "What is the perimeter of a square with a side length of 5 cm?",
+    "options": ["25 cm", "10 cm", "20 cm", "15 cm"],
+    "answer": "20 cm"
+  },
+  {
+    "question_id": "mat_004",
+    "node_id": "percentages",
+    "difficulty": -0.8,
+    "discrimination": 1.25,
+    "grade_range": [5, 8],
+    "question": "What is 20% of 80?",
+    "options": ["10", "16", "20", "40"],
+    "answer": "16"
+  },
+  {
+    "question_id": "mat_005",
+    "node_id": "irrational_numbers",
+    "difficulty": -0.5,
+    "discrimination": 1.3,
+    "grade_range": [8, 10],
+    "question": "Which of the following is an irrational number?",
+    "options": ["√4", "1/3", "π", "0.5"],
+    "answer": "π"
+  },
+  {
+    "question_id": "mat_006",
+    "node_id": "polynomials",
+    "difficulty": -0.2,
+    "discrimination": 1.35,
+    "grade_range": [8, 10],
+    "question": "What is the degree of the polynomial 4x³ - 2x² + x - 5?",
+    "options": ["1", "2", "3", "4"],
+    "answer": "3"
+  },
+  {
+    "question_id": "mat_007",
+    "node_id": "linear_equations",
+    "difficulty": 0.1,
+    "discrimination": 1.4,
+    "grade_range": [8, 10],
+    "question": "The graph of the equation x = 3 is a line:",
+    "options": ["Parallel to the x-axis", "Parallel to the y-axis", "Passing through origin", "Inclined at 45 degrees"],
+    "answer": "Parallel to the y-axis"
+  },
+  {
+    "question_id": "mat_008",
+    "node_id": "triangles",
+    "difficulty": -0.3,
+    "discrimination": 1.2,
+    "grade_range": [8, 10],
+    "question": "The sum of the angles of a triangle is:",
+    "options": ["90°", "180°", "270°", "360°"],
+    "answer": "180°"
+  },
+  {
+    "question_id": "mat_009",
+    "node_id": "probability",
+    "difficulty": 0.3,
+    "discrimination": 1.35,
+    "grade_range": [9, 11],
+    "question": "What is the probability of getting an even number when a single standard die is rolled?",
+    "options": ["1/6", "1/3", "1/2", "2/3"],
+    "answer": "1/2"
+  },
+  {
+    "question_id": "mat_010",
+    "node_id": "quadratics",
+    "difficulty": 0.2,
+    "discrimination": 1.3,
+    "grade_range": [9, 11],
+    "question": "What are the roots of the quadratic equation x² - 5x + 6 = 0?",
+    "options": ["1 and 6", "2 and 3", "-2 and -3", "-1 and -6"],
+    "answer": "2 and 3"
+  },
+  {
+    "question_id": "mat_011",
+    "node_id": "trigonometry",
+    "difficulty": 0.6,
+    "discrimination": 1.4,
+    "grade_range": [10, 12],
+    "question": "What is the value of sin²(θ) + cos²(θ) for any angle θ?",
+    "options": ["0", "1", "-1", "2"],
+    "answer": "1"
+  },
+  {
+    "question_id": "mat_012",
+    "node_id": "coordinate_geometry",
+    "difficulty": 0.5,
+    "discrimination": 1.25,
+    "grade_range": [9, 11],
+    "question": "What is the distance between the points (1, 2) and (4, 6)?",
+    "options": ["3", "4", "5", "7"],
+    "answer": "5"
+  },
+  {
+    "question_id": "mat_013",
+    "node_id": "calculus_differentiation",
+    "difficulty": 1.0,
+    "discrimination": 1.45,
+    "grade_range": [11, 12],
+    "question": "What is the derivative of x² sin(x) with respect to x?",
+    "options": ["2x cos(x)", "2x sin(x) + x² cos(x)", "2x sin(x) - x² cos(x)", "x² cos(x)"],
+    "answer": "2x sin(x) + x² cos(x)"
+  },
+  {
+    "question_id": "mat_014",
+    "node_id": "calculus_integration",
+    "difficulty": 1.2,
+    "discrimination": 1.4,
+    "grade_range": [11, 12],
+    "question": "What is the definite integral of x dx from x = 0 to x = 2?",
+    "options": ["1", "2", "4", "0"],
+    "answer": "2"
+  },
+  {
+    "question_id": "mat_015",
+    "node_id": "matrices",
+    "difficulty": 1.4,
+    "discrimination": 1.5,
+    "grade_range": [11, 12],
+    "question": "If a 2x2 matrix has determinant zero, then the matrix is:",
+    "options": ["Symmetric", "Identity", "Singular", "Invertible"],
+    "answer": "Singular"
+  }
+]

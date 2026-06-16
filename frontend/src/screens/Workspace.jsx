@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useSession } from '../context/SessionContext';
+import { useProfile } from '../context/ProfileContext';
 import VideoPlayer from '../components/VideoPlayer';
 import TranscriptPanel from '../components/TranscriptPanel';
 import ChatPanel from '../components/ChatPanel';
 import MarkdownEditor from '../components/MarkdownEditor';
 import PipelineStatus from '../components/PipelineStatus';
+import MultimodalInput from '../components/MultimodalInput';
 
 export default function Workspace() {
   const {
@@ -16,24 +18,35 @@ export default function Workspace() {
     activeProgress
   } = useSession();
 
-  const [inputTopic, setInputTopic] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('Physics');
   const [currentTime, setCurrentTime] = useState(0);
+  const { profile } = useProfile() || {};
+
+  const getSubjectTheta = (subject) => {
+    if (profile?.subject_thetas && profile.subject_thetas[subject] !== undefined) {
+      return parseFloat(profile.subject_thetas[subject]).toFixed(2);
+    }
+    const conf = profile?.confidence_map?.[subject];
+    if (conf !== undefined) {
+      const mapped = -2.0 + 4.0 * (conf / 100.0);
+      return parseFloat(mapped).toFixed(2);
+    }
+    return '0.00';
+  };
 
   useEffect(() => {
     setCurrentTime(0);
   }, [session.video_url]);
 
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    if (!inputTopic.trim()) return;
-    startPipeline(inputTopic.trim(), selectedSubject);
-  };
-
   const isPipelineRunning =
     session.pipeline_stage !== 'idle' &&
     session.pipeline_stage !== 'complete' &&
     session.pipeline_stage !== 'error';
+
+  const handleMultimodalSubmit = (topic, subjectOverride) => {
+    const sub = subjectOverride || selectedSubject;
+    startPipeline(topic.trim(), sub);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -41,38 +54,13 @@ export default function Workspace() {
       {/* Top Topic Input Bar */}
       <div
         style={{
-          padding: 'var(--space-4) var(--space-8)',
+          padding: '12px 32px',
           background: 'var(--bg-surface)',
           borderBottom: '1px solid var(--border-subtle)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 'var(--space-4)'
         }}
       >
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flex: 1, gap: 'var(--space-3)', maxWidth: '800px' }}>
-          <input
-            type="text"
-            value={inputTopic}
-            onChange={(e) => setInputTopic(e.target.value)}
-            disabled={isPipelineRunning}
-            placeholder="Ask about any high school textbook topic — e.g., Bohr's Model, Kinetic Theory, Redox Reactions..."
-            style={{
-              flex: 1,
-              background: 'var(--bg-raised)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--r-md)',
-              padding: '10px var(--space-4)',
-              color: 'var(--text-primary)',
-              fontSize: '13px',
-              outline: 'none',
-              transition: 'border-color 0.2s'
-            }}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--accent-blue)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--border-default)')}
-          />
-          
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', maxWidth: '900px' }}>
+          {/* Subject selector */}
           <select
             value={selectedSubject}
             onChange={(e) => setSelectedSubject(e.target.value)}
@@ -81,35 +69,56 @@ export default function Workspace() {
               background: 'var(--bg-raised)',
               border: '1px solid var(--border-default)',
               color: 'var(--text-primary)',
-              borderRadius: 'var(--r-md)',
-              padding: '0 var(--space-4)',
+              borderRadius: '20px',
+              padding: '10px 14px',
               fontSize: '13px',
-              outline: 'none'
+              outline: 'none',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
-            <option value="Physics">Physics ⚡</option>
-            <option value="Chemistry">Chemistry 🧪</option>
-            <option value="Mathematics">Mathematics 📐</option>
-            <option value="Biology">Biology 🌿</option>
+            <option value="Physics">⚡ Physics</option>
+            <option value="Chemistry">🧪 Chemistry</option>
+            <option value="Mathematics">📐 Mathematics</option>
+            <option value="Biology">🌿 Biology</option>
           </select>
 
-          <button
-            type="submit"
-            disabled={isPipelineRunning || !inputTopic.trim()}
-            className="btn btn-primary"
+          {/* Dynamic Theta Ability Rating Indicator */}
+          <div
             style={{
-              padding: '0 var(--space-6)',
+              background: 'var(--bg-raised)',
+              border: '1px solid var(--border-default)',
+              color: 'var(--text-primary)',
+              borderRadius: '20px',
+              padding: '10px 16px',
               fontSize: '13px',
-              borderRadius: 'var(--r-md)',
-              whiteSpace: 'nowrap'
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
             }}
           >
-            Generate Lesson
-          </button>
-        </form>
+            <span style={{ color: 'var(--text-secondary)' }}>Ability Rating:</span>
+            <strong style={{ color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>
+              θ = {getSubjectTheta(selectedSubject)}
+            </strong>
+          </div>
+
+          {/* Multimodal input */}
+          <div style={{ flex: 1 }}>
+            <MultimodalInput
+              onSubmit={handleMultimodalSubmit}
+              disabled={isPipelineRunning}
+              subject={selectedSubject}
+              placeholder="Ask about any topic — type, speak 🎙️, or attach an image 📷"
+            />
+          </div>
+        </div>
 
         {session.topic_resolved && (
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', marginTop: 8 }}>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Current Topic:</span>
             <span
               className="badge badge-amber"

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import SubjectPill from '../components/SubjectPill';
 import { useSession } from '../context/SessionContext';
 import { getSessionDate, formatSessionDate } from '../utils/sessionHelpers';
+import PdfUploader from '../components/PdfUploader';
 
 export default function Library({ setActiveScreen }) {
   const { loadSessionById } = useSession();
@@ -108,6 +109,12 @@ export default function Library({ setActiveScreen }) {
           gap: 'var(--space-3)'
         }}
       >
+        <div style={{ width: '100%', marginBottom: '24px' }}>
+          <PdfUploader onUploadComplete={() => {
+            // Optional callback logic after upload finishes
+          }}/>
+        </div>
+
         {/* Subject Filter Pills */}
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
           {['All', 'Physics', 'Chemistry', 'Mathematics', 'Biology'].map(subj => (
